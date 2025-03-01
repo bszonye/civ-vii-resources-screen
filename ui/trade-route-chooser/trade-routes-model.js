@@ -47,10 +47,48 @@ class TradeRoutesModelImpl {
             const statusTexts = this.getTradeActionText(tradeRoute.status, targetCity, leaderName, isLandRoute);
             const importPayloads = [];
             const exportYieldAmounts = [];
+            // Map to track unique payloads and their counts
+            const payloadMap = new Map();
+
+            // Set to track which payload types we've already processed
+            const processedPayloadIds = new Set();
+
+            // First pass: identify all payloads and count them
             for (const resource of tradeRoute.importPayloads) {
                 const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
-                if (payload && payload.ResourceClassType != "RESOURCECLASS_TREASURE") {
-                    importPayloads.push(payload);
+                if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
+                    const payloadId = payload.ResourceType || payload.id;
+                    console.error('Resource payload name')
+                    console.error(payloadId)
+
+                    if (!payloadMap.has(payloadId)) {
+                        payloadMap.set(payloadId, {
+                            payload: payload,
+                            count: 0,
+                            firstIndex: importPayloads.length // Track first appearance
+                        });
+                    }
+
+                    payloadMap.get(payloadId).count++;
+                }
+            }
+
+            // Second pass: create ordered array with sequential identical payloads
+            for (const resource of tradeRoute.importPayloads) {
+                const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
+                if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
+                    const payloadId = payload.ResourceType || payload.id;
+
+                    // Only process each unique payload type once
+                    if (!processedPayloadIds.has(payloadId)) {
+                        processedPayloadIds.add(payloadId);
+
+                        // Add this payload type multiple times based on its count
+                        const count = payloadMap.get(payloadId).count;
+                        for (let i = 0; i < count; i++) {
+                            importPayloads.push(payload);
+                        }
+                    }
                 }
             }
             for (const yieldAmount of tradeRoute.exportYields) {
@@ -73,7 +111,8 @@ class TradeRoutesModelImpl {
                 importPayloads,
                 exportYields: tradeRoute.exportYields,
                 exportYieldsString,
-                pathPlots: tradeRoute.pathPlots
+                pathPlots: tradeRoute.pathPlots,
+                resourceCount: payloadMap
             });
         }
         return this.projectedTradeRoutes;

@@ -41,7 +41,8 @@ class TradeRouteChooser extends Panel {
         description.setAttribute("data-slot", "header");
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
         frame.appendChild(description);
-        const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" }];
+        const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" },
+        { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }];
         this.sortOrder.classList.add("m-4", "font-body-lg");
         this.sortOrder.setAttribute("enable-shell-nav", "true");
         this.sortOrder.setAttribute("data-slot", "header");
@@ -49,6 +50,11 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
         this.sortOrder.addEventListener("dropdown-selection-change", (ev) => {
             this.sortMode = ev.detail.selectedItem?.label ?? "LOC_TRADE_LENS_SORT_DEFAULT";
+            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+                this.resourceSelector.classList.remove("hidden");
+              } else {
+                this.resourceSelector.classList.add("hidden");
+              }
             this.applySort();
         });
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
@@ -64,6 +70,48 @@ class TradeRouteChooser extends Panel {
             this.confirmButton.addEventListener("action-activate", () => this.checkAndStartTradeRoute());
             frame.appendChild(this.confirmButton);
         }
+
+		this.resourceSelector = document.createElement("fxs-selector");
+		this.resourceSelector.classList.add("m-4", "font-body-lg");
+		this.resourceSelector.setAttribute("enable-shell-nav", "true");
+		this.resourceSelector.setAttribute("data-slot", "header");
+		this.resourceSelector.setAttribute("selected-item-index", "0");
+
+
+		this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
+		  this.resourceSortBy = ev.detail.selectedItem?.label ?? "RESOURCE_FISH";
+		  if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+			this.applySort();
+		  }
+		});
+
+		this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
+        this.resourceSelector.classList.add("hidden");
+
+        const resourceTypes = new Set();
+
+        this.tradeRoutes.forEach(item => {
+          if (item.route.resourceCount instanceof Map) {
+            for (const key of item.route.resourceCount.keys()) {
+              resourceTypes.add(key);
+            }
+          }
+        });
+
+        const resourceOptions = Array.from(resourceTypes).map(resource => ({
+          label: resource
+        }));
+
+        if (resourceOptions.length > 0) {
+          this.resourceSortBy = resourceOptions[0].label;
+        } else {
+          this.resourceSortBy = 'RESOURCE_FISH';
+        }
+
+        this.resourceSelector.componentCreatedEvent.on((component) =>
+          component.updateSelectorItems(resourceOptions)
+        );
+        frame.appendChild(this.resourceSelector);
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
     }
@@ -147,12 +195,34 @@ class TradeRouteChooser extends Panel {
         return (Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS))
             || b.route.leaderName.localeCompare(a.route.leaderName);
     }
+
+    resourceSort(a, b) {
+        const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                             Number(a.route.status == TradeRouteStatus.SUCCESS);
+        if (statusComparison !== 0) {
+            return statusComparison;
+        }
+
+        const aResourceCount = a.route.resourceCount.get(this.resourceSortBy)?.count || 0;
+        const bResourceCount = b.route.resourceCount.get(this.resourceSortBy)?.count || 0;
+
+        const resourceComparison = bResourceCount - aResourceCount;
+
+        if (resourceComparison === 0) {
+            return (b.route.importPayloads.length) - (a.route.importPayloads.length);
+        }
+
+        return resourceComparison;
+    }
     applySort() {
         if (this.sortMode == "LOC_TRADE_LENS_SORT_DEFAULT") {
             this.tradeRoutes.sort(this.defaultSort);
         }
         else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_LEADER") {
             this.tradeRoutes.sort(this.leaderSort);
+        }
+        else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+            this.tradeRoutes.sort((a, b) => this.resourceSort(a, b));           // arrow notation because need this.
         }
         this.routesListEl.innerHTML = "";
         for (const route of this.tradeRoutes) {
