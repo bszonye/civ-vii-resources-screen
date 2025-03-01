@@ -78,17 +78,7 @@ class TradeRouteChooser extends Panel {
 		this.resourceSelector.setAttribute("selected-item-index", "0");
 
 
-		this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
-		  this.resourceSortBy = ev.detail.selectedItem?.label ?? "RESOURCE_FISH";
-		  if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
-			this.applySort();
-		  }
-		});
-
-		this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
-        this.resourceSelector.classList.add("hidden");
-
-        const resourceTypes = new Set();
+		const resourceTypes = new Set();
 
         this.tradeRoutes.forEach(item => {
           if (item.route.resourceCount instanceof Map) {
@@ -98,12 +88,18 @@ class TradeRouteChooser extends Panel {
           }
         });
 
-        const resourceOptions = Array.from(resourceTypes).map(resource => ({
-          label: resource
-        }));
+        // Create options with both display text and actual value
+        const resourceOptions = Array.from(resourceTypes).filter(resource => !(this.isModern && resource.includes("DISTANT_LANDS"))).map(resource => {
+            const resourceSimple = resource.replace("RESOURCE_", "")
+            const displayText = resourceSimple.charAt(0).toUpperCase() + resourceSimple.slice(1).toLowerCase();
+            return {
+              label: displayText,  // What shows in the dropdown
+              value: resource      // The actual data value used for sorting
+            };
+          }).sort((a, b) => a.label.localeCompare(b.label));
 
         if (resourceOptions.length > 0) {
-          this.resourceSortBy = resourceOptions[0].label;
+          this.resourceSortBy = resourceOptions[0].value;
         } else {
           this.resourceSortBy = 'RESOURCE_FISH';
         }
@@ -111,6 +107,15 @@ class TradeRouteChooser extends Panel {
         this.resourceSelector.componentCreatedEvent.on((component) =>
           component.updateSelectorItems(resourceOptions)
         );
+
+        this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
+          this.resourceSortBy = ev.detail.selectedItem?.value ?? "RESOURCE_FISH";
+          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+            this.applySort();
+          }
+        });
+        this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
+        this.resourceSelector.classList.add("hidden");
         frame.appendChild(this.resourceSelector);
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
@@ -202,9 +207,35 @@ class TradeRouteChooser extends Panel {
         if (statusComparison !== 0) {
             return statusComparison;
         }
-
         const aResourceCount = a.route.resourceCount.get(this.resourceSortBy)?.count || 0;
         const bResourceCount = b.route.resourceCount.get(this.resourceSortBy)?.count || 0;
+
+        const resourceComparison = bResourceCount - aResourceCount;
+
+        if (resourceComparison === 0) {
+            return (b.route.importPayloads.length) - (a.route.importPayloads.length);
+        }
+
+        return resourceComparison;
+    }
+
+    modernResourceSort(a, b) {
+        const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                             Number(a.route.status == TradeRouteStatus.SUCCESS);
+        if (statusComparison !== 0) {
+            return statusComparison;
+        }
+        const distantLandsKey = this.resourceSortBy + "_DISTANT_LANDS";
+
+        let aResourceCount = a.route.resourceCount.get(this.resourceSortBy)?.count || 0;
+        let bResourceCount = b.route.resourceCount.get(this.resourceSortBy)?.count || 0;
+
+        if (a.route.resourceCount.has(distantLandsKey) || b.route.resourceCount.has(distantLandsKey)) {
+            console.error('distant lands present!')
+            console.error(distantLandsKey)
+            aResourceCount = aResourceCount + a.route.resourceCount.get(distantLandsKey)?.count || 0;
+            bResourceCount = aResourceCount + b.route.resourceCount.get(distantLandsKey)?.count || 0;
+        }
 
         const resourceComparison = bResourceCount - aResourceCount;
 
@@ -222,6 +253,9 @@ class TradeRouteChooser extends Panel {
             this.tradeRoutes.sort(this.leaderSort);
         }
         else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+            if (this.isModern) {
+                this.tradeRoutes.sort((a, b) => this.modernResourceSort(a, b));
+            }
             this.tradeRoutes.sort((a, b) => this.resourceSort(a, b));           // arrow notation because need this.
         }
         this.routesListEl.innerHTML = "";
