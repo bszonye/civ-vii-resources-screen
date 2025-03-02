@@ -20,6 +20,8 @@ class TradeRouteChooser extends Panel {
         super(root);
         this.isModern = Game.age == Database.makeHash("AGE_MODERN");
         this.failsAtBottom = false
+        this.failsAtBottomTracker = this.onTrackFailsActivate.bind(this);
+        this.resourceTracker = this.onSwitchResourceActivate.bind(this);
         this.sortOrder = document.createElement("fxs-selector");
         this.routesListEl = document.createElement("fxs-vslot");
         this.sortMode = "LOC_TRADE_LENS_SORT_DEFAULT";
@@ -48,7 +50,7 @@ class TradeRouteChooser extends Panel {
         description.classList.add("text-center", "mx-3\\.5", "font-body-sm");
         description.setAttribute("data-slot", "header");
         description.classList.add("text-center", "font-body-sm");
-        description.style.marginLeft = "1rem"; // 12px equivalent in most systems
+        description.style.marginLeft = "1rem";
         description.style.flexShrink = "1"; // Allow description to shrink if needed
         description.style.minWidth = "0"; // Allow text to wrap properly
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
@@ -68,8 +70,10 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.setAttribute("selected-item-index", "0");
         this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
-        this.sortOrder.style.height = "10%"
+        //this.sortOrder.style.height = "10%"
         inner_frame.appendChild(this.sortOrder);
+		this.setupResourceSelector(frame)
+
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
         frame.appendChild(this.routesListEl);
         if (this.isModern) {
@@ -82,8 +86,14 @@ class TradeRouteChooser extends Panel {
             frame.appendChild(this.confirmButton);
         }
 
+        const checkBox = document.createElement('fxs-checkbox');
+        checkBox.setAttribute('selected', `${this.isTracked}`);
+        checkBox.setAttribute("tabindex", "-1");
+        checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
+        checkBox.addEventListener('action-activate', this.failsAtBottomTracker);
+        inner_frame.appendChild(checkBox);
         this.setupUpdateSecondSorter()
-		this.setupResourceSelector(inner_frame)
+		// this.setupResourceSelector(inner_frame)
         this.setupYieldSelector(inner_frame)
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
@@ -402,7 +412,7 @@ class TradeRouteChooser extends Panel {
 		this.resourceSelector.setAttribute("enable-shell-nav", "true");
 		this.resourceSelector.setAttribute("data-slot", "header");
 		this.resourceSelector.setAttribute("selected-item-index", "0");
-        this.resourceSelector.style.height = "10%"
+        //this.resourceSelector.style.height = "10%"
 
 		const resourceTypes = new Set();
 
@@ -441,7 +451,30 @@ class TradeRouteChooser extends Panel {
         });
         this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
         this.resourceSelector.classList.add("hidden");
-        frame.appendChild(this.resourceSelector);
+        // frame.appendChild(this.resourceSelector);
+        const payloadInfo = document.createElement("div");
+        payloadInfo.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        frame.appendChild(payloadInfo);
+        for (const payload of resourceTypes) {
+            const routeEle = document.createElement("fxs-chooser-item");
+            // routeEle.setAttribute("selectable-when-disabled", "true");
+            routeEle.setAttribute("select-on-focus", "true");
+            // routeEle.setAttribute("select-on-activate", "true");
+            routeEle.setAttribute("show-frame-on-hover", "false");
+            // routeEle.setAttribute("data-tooltip-style", "trade-route");
+            routeEle.setAttribute('data-tooltip-anchor', "right");
+            // routeEle.setAttribute('data-tooltip-anchor-offset', "10");
+            // routeEle.setAttribute("data-trade-route-index", tradeRoute.index.toString());
+            routeEle.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            routeEle.setAttribute("data-icon-id", payload);
+            routeEle.addEventListener('click', this.resourceTracker);
+            payloadInfo.appendChild(routeEle);
+            const payloadIcon = document.createElement("fxs-icon");
+            payloadIcon.classList.add("size-10", "relative");
+            payloadIcon.setAttribute("data-icon-id", payload);
+            payloadIcon.setAttribute("data-icon-context", "RESOURCE");
+            routeEle.appendChild(payloadIcon);
+        }
     }
     setupYieldSelector(frame) {
         this.yieldSelector = document.createElement("fxs-selector");
@@ -472,6 +505,7 @@ class TradeRouteChooser extends Panel {
               value: yieldType      // The actual data value used for sorting
             };
           }).sort((a, b) => a.label.localeCompare(b.label));
+
 
         if (yieldOptions.length > 0) {
           this.yieldSortBy = yieldOptions[0].value;
@@ -508,6 +542,24 @@ class TradeRouteChooser extends Panel {
               }
             this.applySort();
         });
+    }
+    onTrackFailsActivate(event) {
+        if (event.target instanceof HTMLElement) {
+            const isCurrentlyTracked = event.target.getAttribute('selected');
+            this.failsAtBottom = isCurrentlyTracked === 'true' ? true : false;
+            console.error(`fails at bottom set to ${this.failsAtBottom}`)
+            this.applySort();
+        }
+    }
+
+    onSwitchResourceActivate(event) {
+        console.error(`v2 Trying to set resource of ${event.currentTarget}`)
+        console.error(`v2 Trying to set resource of ${event.currentTarget.getAttribute('data-icon-id')}`)
+        if (event.target instanceof HTMLElement) {
+            this.resourceSortBy = event.currentTarget.getAttribute('data-icon-id');
+            console.error(`Tracked Resource set to ${this.resourceSortBy}`)
+            this.applySort();
+        }
     }
 }
 Controls.define('trade-route-chooser', {

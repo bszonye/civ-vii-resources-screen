@@ -30,7 +30,7 @@ GameInfo.GameModifiers.forEach(i => {
      */
 
     if (hasYieldType && hasResourceType && hasPercentMultiplier && hasAmount) {
-        console.error(i.ModifierId)
+        // console.error(i.ModifierId)
         // Extract values
         const resourceType = matchingEntries.find(e => e.Name === "ResourceType").Value;
         const yieldType = matchingEntries.find(e => e.Name === "YieldType").Value;
@@ -39,7 +39,7 @@ GameInfo.GameModifiers.forEach(i => {
 
         if (!my_map.has(resourceType)) {
             my_map.set(resourceType, new Map());
-            console.error(`Setting resourceType ${resourceType}`)
+            // console.error(`Setting resourceType ${resourceType}`)
         }
         let resourceMap = my_map.get(resourceType);
         let propertiesMap = new Map();
@@ -47,10 +47,11 @@ GameInfo.GameModifiers.forEach(i => {
         propertiesMap.set('percentMultiplier', percentMultiplier);
 
         resourceMap.set(yieldType, propertiesMap);
-        console.error(`New Entry for  resourceType ${resourceType}, ${yieldType}`)
+        /* console.error(`New Entry for  resourceType ${resourceType}, ${yieldType}`)
         propertiesMap.forEach((value, key) => {
           console.error(`property: ${key}`, value);
         });
+         */
     }
     GameInfo.Resources.forEach(resource => {
         if (my_map.has(resource.ResourceType)) {
@@ -59,11 +60,14 @@ GameInfo.GameModifiers.forEach(i => {
         }
     });
 })
+/*
 my_map.forEach((entry, index) => {console.error(`  Entry ${index}:`);
         for (const key in entry) {
           console.error(`    ${key}: ${entry[key]}`);
         }
       });
+
+ */
 class TradeRoutesModelImpl {
     constructor() {
         this.projectedTradeRoutes = [];
@@ -140,11 +144,11 @@ class TradeRoutesModelImpl {
                     if (my_map.has(payloadId)) {
                         const resourceYields = my_map.get(payloadId)
                         resourceYields.forEach((value, key) => {
-                          console.error(`yield: ${key}`, value);
+                          // console.error(`yield: ${key}`, value);
                           yieldMapCount.set(key, yieldMapCount.get(key) + 1);
                         });
                     }
-                    else {console.error(`Yield mapper had no entries for ${payloadId}`)}
+                    else {console.log(`Yield mapper had no entries for ${payloadId}`)}
 
                     payloadMap[payloadId] += 1;
                 }
