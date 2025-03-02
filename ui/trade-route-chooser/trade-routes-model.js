@@ -3,6 +3,67 @@
  * @copyright 2024, Firaxis Games
  * @description Select and get info on trade trade routes
  */
+
+ // get GameInfo on what resource does what, this is cursed
+console.error('mapping modifierArgs')
+let my_map = new Map();
+
+// RESOURCECLASS_EMPIRE
+
+// Iterate over each game modifier
+GameInfo.GameModifiers.forEach(i => {
+    // Find matching entries in ModifierArguments
+    const matchingEntries = GameInfo.ModifierArguments.filter(e => e.ModifierId === i.ModifierId);
+
+    // Check if we have all required name entries
+    const hasYieldType = matchingEntries.some(e => e.Name === "YieldType");
+    const hasResourceType = matchingEntries.some(e => e.Name === "ResourceType");
+    const hasPercentMultiplier = matchingEntries.some(e => e.Name === "PercentMultiplier");
+    const hasAmount = matchingEntries.some(e => e.Name === "Amount");
+
+    /* matchingEntries.forEach((entry, index) => {
+        console.error(`  Entry ${index}:`);
+        for (const key in entry) {
+            console.error(`    ${key}: ${entry[key]}`);
+        }
+    });
+     */
+
+    if (hasYieldType && hasResourceType && hasPercentMultiplier && hasAmount) {
+        console.error(i.ModifierId)
+        // Extract values
+        const resourceType = matchingEntries.find(e => e.Name === "ResourceType").Value;
+        const yieldType = matchingEntries.find(e => e.Name === "YieldType").Value;
+        const amount = matchingEntries.find(e => e.Name === "Amount").Value;
+        const percentMultiplier = matchingEntries.find(e => e.Name === "PercentMultiplier").Value;
+
+        if (!my_map.has(resourceType)) {
+            my_map.set(resourceType, new Map());
+            console.error(`Setting resourceType ${resourceType}`)
+        }
+        let resourceMap = my_map.get(resourceType);
+        let propertiesMap = new Map();
+        propertiesMap.set('amount', amount);
+        propertiesMap.set('percentMultiplier', percentMultiplier);
+
+        resourceMap.set(yieldType, propertiesMap);
+        console.error(`New Entry for  resourceType ${resourceType}, ${yieldType}`)
+        propertiesMap.forEach((value, key) => {
+          console.error(`property: ${key}`, value);
+        });
+    }
+    GameInfo.Resources.forEach(resource => {
+        if (my_map.has(resource.ResourceType)) {
+            const existingEntry = my_map.get(resource.ResourceType);
+            existingEntry.ResourceClassType = resource.ResourceClassType;
+        }
+    });
+})
+my_map.forEach((entry, index) => {console.error(`  Entry ${index}:`);
+        for (const key in entry) {
+          console.error(`    ${key}: ${entry[key]}`);
+        }
+      });
 class TradeRoutesModelImpl {
     constructor() {
         this.projectedTradeRoutes = [];
@@ -47,13 +108,18 @@ class TradeRoutesModelImpl {
             const statusTexts = this.getTradeActionText(tradeRoute.status, targetCity, leaderName, isLandRoute);
             const importPayloads = [];
             const exportYieldAmounts = [];
-            // Map to track unique payloads and their counts
-            const payloadMap = new Map();
 
-            // Set to track which payload types we've already processed
+            const payloadMap = new Map();               // per ResourceType counts
+            const yieldMapCount = new Map([                                // per City YieldType counts
+              ['YIELD_FOOD', 0],
+              ['YIELD_PRODUCTION', 0],
+              ['YIELD_GOLD', 0],
+              ['YIELD_SCIENCE', 0],
+              ['YIELD_CULTURE', 0],
+              ['YIELD_HAPPINESS', 0],
+              ['YIELD_DIPLOMACY', 0]
+            ]);
             const processedPayloadIds = new Set();
-
-            // First pass: identify all payloads and count them
             for (const resource of tradeRoute.importPayloads) {
                 const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
                 if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
@@ -70,6 +136,17 @@ class TradeRoutesModelImpl {
                     }
 
                     payloadMap.get(payloadId).count++;
+
+                    if (my_map.has(payloadId)) {
+                        const resourceYields = my_map.get(payloadId)
+                        resourceYields.forEach((value, key) => {
+                          console.error(`yield: ${key}`, value);
+                          yieldMapCount.set(key, yieldMapCount.get(key) + 1);
+                        });
+                    }
+                    else {console.error(`Yield mapper had no entries for ${payloadId}`)}
+
+                    payloadMap[payloadId] += 1;
                 }
             }
 
@@ -82,8 +159,6 @@ class TradeRoutesModelImpl {
                     // Only process each unique payload type once
                     if (!processedPayloadIds.has(payloadId)) {
                         processedPayloadIds.add(payloadId);
-
-                        // Add this payload type multiple times based on its count
                         const count = payloadMap.get(payloadId).count;
                         for (let i = 0; i < count; i++) {
                             importPayloads.push(payload);
@@ -112,7 +187,8 @@ class TradeRoutesModelImpl {
                 exportYields: tradeRoute.exportYields,
                 exportYieldsString,
                 pathPlots: tradeRoute.pathPlots,
-                resourceCount: payloadMap
+                resourceCount: payloadMap,
+                yieldCountMap: yieldMapCount
             });
         }
         return this.projectedTradeRoutes;

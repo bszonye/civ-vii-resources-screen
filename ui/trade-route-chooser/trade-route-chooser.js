@@ -19,6 +19,7 @@ class TradeRouteChooser extends Panel {
     constructor(root) {
         super(root);
         this.isModern = Game.age == Database.makeHash("AGE_MODERN");
+        this.failsAtBottom = false
         this.sortOrder = document.createElement("fxs-selector");
         this.routesListEl = document.createElement("fxs-vslot");
         this.sortMode = "LOC_TRADE_LENS_SORT_DEFAULT";
@@ -41,22 +42,14 @@ class TradeRouteChooser extends Panel {
         description.setAttribute("data-slot", "header");
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
         frame.appendChild(description);
+
         const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" },
-        { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }];
+        { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }, { label: "LOC_TRADE_LENS_SORT_BY_YIELD" }];
         this.sortOrder.classList.add("m-4", "font-body-lg");
         this.sortOrder.setAttribute("enable-shell-nav", "true");
         this.sortOrder.setAttribute("data-slot", "header");
         this.sortOrder.setAttribute("selected-item-index", "0");
         this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
-        this.sortOrder.addEventListener("dropdown-selection-change", (ev) => {
-            this.sortMode = ev.detail.selectedItem?.label ?? "LOC_TRADE_LENS_SORT_DEFAULT";
-            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
-                this.resourceSelector.classList.remove("hidden");
-              } else {
-                this.resourceSelector.classList.add("hidden");
-              }
-            this.applySort();
-        });
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
         frame.appendChild(this.sortOrder);
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
@@ -71,52 +64,9 @@ class TradeRouteChooser extends Panel {
             frame.appendChild(this.confirmButton);
         }
 
-		this.resourceSelector = document.createElement("fxs-selector");
-		this.resourceSelector.classList.add("m-4", "font-body-lg");
-		this.resourceSelector.setAttribute("enable-shell-nav", "true");
-		this.resourceSelector.setAttribute("data-slot", "header");
-		this.resourceSelector.setAttribute("selected-item-index", "0");
-
-
-		const resourceTypes = new Set();
-
-        this.tradeRoutes.forEach(item => {
-          if (item.route.resourceCount instanceof Map) {
-            for (const key of item.route.resourceCount.keys()) {
-              resourceTypes.add(key);
-            }
-          }
-        });
-
-        // Create options with both display text and actual value
-        const resourceOptions = Array.from(resourceTypes).filter(resource => !(this.isModern && resource.includes("DISTANT_LANDS"))).map(resource => {
-            const resourceSimple = resource.replace("RESOURCE_", "")
-            const displayText = resourceSimple.charAt(0).toUpperCase() + resourceSimple.slice(1).toLowerCase();
-            return {
-              label: displayText,  // What shows in the dropdown
-              value: resource      // The actual data value used for sorting
-            };
-          }).sort((a, b) => a.label.localeCompare(b.label));
-
-        if (resourceOptions.length > 0) {
-          this.resourceSortBy = resourceOptions[0].value;
-        } else {
-          this.resourceSortBy = 'RESOURCE_FISH';
-        }
-
-        this.resourceSelector.componentCreatedEvent.on((component) =>
-          component.updateSelectorItems(resourceOptions)
-        );
-
-        this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
-          this.resourceSortBy = ev.detail.selectedItem?.value ?? "RESOURCE_FISH";
-          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
-            this.applySort();
-          }
-        });
-        this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
-        this.resourceSelector.classList.add("hidden");
-        frame.appendChild(this.resourceSelector);
+        this.setupUpdateSecondSorter()
+		this.setupResourceSelector(frame)
+        this.setupYieldSelector(frame)
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
     }
@@ -193,19 +143,32 @@ class TradeRouteChooser extends Panel {
         }
     }
     defaultSort(a, b) {
-        return (Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS))
-            || (b.route.importPayloads.length) - (a.route.importPayloads.length);
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
+        }
+        return (b.route.importPayloads.length) - (a.route.importPayloads.length);
     }
     leaderSort(a, b) {
-        return (Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS))
-            || b.route.leaderName.localeCompare(a.route.leaderName);
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
+        }
+        return b.route.leaderName.localeCompare(a.route.leaderName);
     }
 
     resourceSort(a, b) {
-        const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
-                             Number(a.route.status == TradeRouteStatus.SUCCESS);
-        if (statusComparison !== 0) {
-            return statusComparison;
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
         }
         const aResourceCount = a.route.resourceCount.get(this.resourceSortBy)?.count || 0;
         const bResourceCount = b.route.resourceCount.get(this.resourceSortBy)?.count || 0;
@@ -220,10 +183,12 @@ class TradeRouteChooser extends Panel {
     }
 
     modernResourceSort(a, b) {
-        const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
-                             Number(a.route.status == TradeRouteStatus.SUCCESS);
-        if (statusComparison !== 0) {
-            return statusComparison;
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
         }
         const distantLandsKey = this.resourceSortBy + "_DISTANT_LANDS";
 
@@ -245,18 +210,40 @@ class TradeRouteChooser extends Panel {
 
         return resourceComparison;
     }
+
+    yieldSort(a, b) {
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
+        }
+        let aYieldCount = a.route.yieldCountMap.get(this.yieldSortBy) || 0;
+        let bYieldCount = b.route.yieldCountMap.get(this.yieldSortBy) || 0;
+        console.error(`Yield amounts for ${Locale.compose(a.route.city.name)}: ${aYieldCount}, vs ${Locale.compose(b.route.city.name)} ${bYieldCount}`)
+        const resourceComparison = bYieldCount - aYieldCount;
+
+        if (resourceComparison === 0) {
+            return (b.route.importPayloads.length) - (a.route.importPayloads.length);
+        }
+        return resourceComparison;
+    }
     applySort() {
         if (this.sortMode == "LOC_TRADE_LENS_SORT_DEFAULT") {
-            this.tradeRoutes.sort(this.defaultSort);
+            this.tradeRoutes.sort((a, b) => this.defaultSort(a, b));
         }
         else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_LEADER") {
-            this.tradeRoutes.sort(this.leaderSort);
+            this.tradeRoutes.sort((a, b) => this.leaderSort(a, b));
         }
         else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
             if (this.isModern) {
                 this.tradeRoutes.sort((a, b) => this.modernResourceSort(a, b));
             }
             this.tradeRoutes.sort((a, b) => this.resourceSort(a, b));           // arrow notation because need this.
+        }
+        else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_YIELD") {
+            this.tradeRoutes.sort((a, b) => this.yieldSort(a, b));
         }
         this.routesListEl.innerHTML = "";
         for (const route of this.tradeRoutes) {
@@ -389,6 +376,119 @@ class TradeRouteChooser extends Panel {
             this.close();
         }
         return commandValid;
+    }
+
+    setupResourceSelector(frame) {
+        this.resourceSelector = document.createElement("fxs-selector");
+		this.resourceSelector.classList.add("m-4", "font-body-lg");
+		this.resourceSelector.setAttribute("enable-shell-nav", "true");
+		this.resourceSelector.setAttribute("data-slot", "header");
+		this.resourceSelector.setAttribute("selected-item-index", "0");
+
+
+		const resourceTypes = new Set();
+
+        this.tradeRoutes.forEach(item => {
+          if (item.route.resourceCount instanceof Map) {
+            for (const key of item.route.resourceCount.keys()) {
+              resourceTypes.add(key);
+            }
+          }
+        });
+
+        const resourceOptions = Array.from(resourceTypes).filter(resource => !(this.isModern && resource.includes("DISTANT_LANDS"))).map(resource => {
+            const resourceSimple = resource.replace("RESOURCE_", "")
+            const displayText = resourceSimple.charAt(0).toUpperCase() + resourceSimple.slice(1).toLowerCase();
+            return {
+              label: displayText,  // What shows in the dropdown
+              value: resource      // The actual data value used for sorting
+            };
+          }).sort((a, b) => a.label.localeCompare(b.label));
+
+        if (resourceOptions.length > 0) {
+          this.resourceSortBy = resourceOptions[0].value;
+        } else {
+          this.resourceSortBy = 'RESOURCE_FISH';
+        }
+
+        this.resourceSelector.componentCreatedEvent.on((component) =>
+          component.updateSelectorItems(resourceOptions)
+        );
+
+        this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
+          this.resourceSortBy = ev.detail.selectedItem?.value ?? "RESOURCE_FISH";
+          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+            this.applySort();
+          }
+        });
+        this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
+        this.resourceSelector.classList.add("hidden");
+        frame.appendChild(this.resourceSelector);
+    }
+    setupYieldSelector(frame) {
+        this.yieldSelector = document.createElement("fxs-selector");
+		this.yieldSelector.classList.add("m-4", "font-body-lg");
+		this.yieldSelector.setAttribute("enable-shell-nav", "true");
+		this.yieldSelector.setAttribute("data-slot", "header");
+		this.yieldSelector.setAttribute("selected-item-index", "0");
+
+		const yieldTypes = new Set([]);
+
+        this.tradeRoutes.forEach(item => {
+          if (item.route.resourceCount instanceof Map) {
+            for (const [key, value] of item.route.yieldCountMap.entries()) {
+              if (value > 0) {
+                yieldTypes.add(key);
+              }
+            }
+          }
+        });
+
+        const yieldOptions = Array.from(yieldTypes).map(yieldType => {
+            let displayText = yieldType.replace("YIELD_", "")
+            displayText = displayText.charAt(0).toUpperCase() + displayText.slice(1).toLowerCase();
+            if (yieldType === 'YIELD_DIPLOMACY') {displayText = 'Influence'}
+            return {
+              label: displayText,  // What shows in the dropdown
+              value: yieldType      // The actual data value used for sorting
+            };
+          }).sort((a, b) => a.label.localeCompare(b.label));
+
+        if (yieldOptions.length > 0) {
+          this.yieldSortBy = yieldOptions[0].value;
+        } else {
+          this.yieldSortBy = 'YIELD_HAPPINESS';
+        }
+        this.yieldSelector.componentCreatedEvent.on((component) =>
+          component.updateSelectorItems(yieldOptions)
+        );
+
+        this.yieldSelector.addEventListener("dropdown-selection-change", (ev) => {
+          this.yieldSortBy = ev.detail.selectedItem?.value ?? "YIELD_HAPPINESS";
+          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_YIELD") {
+            this.applySort();
+          }
+        });
+        this.yieldSelector.setAttribute("data-audio-focus-ref", "none");
+        this.yieldSelector.classList.add("hidden");
+        frame.appendChild(this.yieldSelector);
+    }
+
+    setupUpdateSecondSorter(){
+        this.sortOrder.addEventListener("dropdown-selection-change", (ev) => {
+            this.sortMode = ev.detail.selectedItem?.label ?? "LOC_TRADE_LENS_SORT_DEFAULT";
+            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
+                this.resourceSelector.classList.remove("hidden");
+              } else {
+                this.resourceSelector.classList.add("hidden");
+              }
+            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_YIELD") {
+                this.yieldSelector.classList.remove("hidden");
+              } else {
+                this.yieldSelector.classList.add("hidden");
+              }
+            this.applySort();
+        });
     }
 }
 Controls.define('trade-route-chooser', {
