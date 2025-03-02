@@ -12,6 +12,13 @@ import NavTray from '/core/ui/navigation-tray/model-navigation-tray.js';
 import Panel from '/core/ui/panel-support.js';
 import ViewManager from '/core/ui/views/view-manager.js';
 import { Focus } from '/core/ui/input/focus-support.js';
+
+const log_level = 'happy'
+const resourceClassMap = new Map()
+GameInfo.Resources.forEach(i => {
+    resourceClassMap.set(i.ResourceType, i.ResourceClassType)
+})
+
 class TradeRouteChooser extends Panel {
     static get activeChooser() {
         return this._activeChooser;
@@ -19,9 +26,10 @@ class TradeRouteChooser extends Panel {
     constructor(root) {
         super(root);
         this.isModern = Game.age == Database.makeHash("AGE_MODERN");
-        this.failsAtBottom = false
+        this.failsAtBottom = true
         this.failsAtBottomTracker = this.onTrackFailsActivate.bind(this);
         this.resourceTracker = this.onSwitchResourceActivate.bind(this);
+        this.yieldTracker = this.onSwitchYieldActivate.bind(this);
         this.sortOrder = document.createElement("fxs-selector");
         this.routesListEl = document.createElement("fxs-vslot");
         this.sortMode = "LOC_TRADE_LENS_SORT_DEFAULT";
@@ -35,32 +43,48 @@ class TradeRouteChooser extends Panel {
         const frame = document.createElement("fxs-subsystem-frame");
         frame.setAttribute("no-close", "true");
         fragment.appendChild(frame);
+        const titleContainer = document.createElement("div");
+        titleContainer.classList.add("header-container");
+        titleContainer.style.display = "flex";
+        titleContainer.style.flexDirection = "row";
+        titleContainer.setAttribute("data-slot", "header");
+        frame.appendChild(titleContainer);
+
         const title = document.createElement("fxs-header");
-        title.setAttribute("data-slot", "header");
         title.setAttribute("title", this.isModern ? "LOC_TRADE_LENS_TITLE_ALT" : "LOC_TRADE_LENS_TITLE");
-        frame.appendChild(title);
+        title.style.marginLeft = "1rem";
+        titleContainer.appendChild(title)
+
+        const checkBoxText = document.createElement('p');
+        checkBoxText.classList.add('font-title-sm', 'leading-loose', 'text-gradient-secondary');
+        checkBoxText.classList.add("text-center", "font-body-sm");
+        checkBoxText.style.marginLeft = "1rem";
+        checkBoxText.innerHTML = Locale.compose('LOC_SLTH_TRADE_TICKBOX');
+        titleContainer.appendChild(checkBoxText);
+
+        const checkBox = document.createElement('fxs-checkbox');
+        checkBox.setAttribute('selected', `${this.isTracked}`);
+        checkBox.setAttribute("tabindex", "-1");
+        checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
+        checkBox.addEventListener('action-activate', this.failsAtBottomTracker);
+        titleContainer.appendChild(checkBox);
 
         const headerContainer = document.createElement("div");
         headerContainer.classList.add("header-container");
-        headerContainer.style.display = "flex"; // Make this a flex container
-        headerContainer.style.flexDirection = "row"; // Arrange items horizontally
+        headerContainer.style.display = "flex";
+        headerContainer.style.flexDirection = "row";
         headerContainer.setAttribute("data-slot", "header");
         frame.appendChild(headerContainer);
+
         const description = document.createElement("div");
         description.classList.add("text-center", "mx-3\\.5", "font-body-sm");
         description.setAttribute("data-slot", "header");
         description.classList.add("text-center", "font-body-sm");
-        description.style.marginLeft = "1rem";
-        description.style.flexShrink = "1"; // Allow description to shrink if needed
-        description.style.minWidth = "0"; // Allow text to wrap properly
+        description.style.marginLeft = "1.25rem";
+        description.style.flexShrink = "1";
+        description.style.minWidth = "0";
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
         headerContainer.appendChild(description);
-
-        const inner_frame = document.createElement("div");
-        inner_frame.style.display = "flex";
-        inner_frame.style.flexDirection = "column";
-        headerContainer.appendChild(inner_frame);
-        inner_frame.style.height = "10%"
 
         const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" },
         { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }, { label: "LOC_TRADE_LENS_SORT_BY_YIELD" }];
@@ -70,9 +94,11 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.setAttribute("selected-item-index", "0");
         this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
-        //this.sortOrder.style.height = "10%"
-        inner_frame.appendChild(this.sortOrder);
+        headerContainer.appendChild(this.sortOrder);
+
 		this.setupResourceSelector(frame)
+        this.setupUpdateSecondSorter()
+        this.setupYieldSelector(frame)
 
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
         frame.appendChild(this.routesListEl);
@@ -86,15 +112,6 @@ class TradeRouteChooser extends Panel {
             frame.appendChild(this.confirmButton);
         }
 
-        const checkBox = document.createElement('fxs-checkbox');
-        checkBox.setAttribute('selected', `${this.isTracked}`);
-        checkBox.setAttribute("tabindex", "-1");
-        checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
-        checkBox.addEventListener('action-activate', this.failsAtBottomTracker);
-        inner_frame.appendChild(checkBox);
-        this.setupUpdateSecondSorter()
-		// this.setupResourceSelector(inner_frame)
-        this.setupYieldSelector(inner_frame)
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
     }
@@ -224,8 +241,8 @@ class TradeRouteChooser extends Panel {
         let bResourceCount = b.route.resourceCount.get(this.resourceSortBy)?.count || 0;
 
         if (a.route.resourceCount.has(distantLandsKey) || b.route.resourceCount.has(distantLandsKey)) {
-            console.error('distant lands present!')
-            console.error(distantLandsKey)
+            this.slthlogger('distant lands present!')
+            this.slthlogger(distantLandsKey)
             aResourceCount = aResourceCount + a.route.resourceCount.get(distantLandsKey)?.count || 0;
             bResourceCount = aResourceCount + b.route.resourceCount.get(distantLandsKey)?.count || 0;
         }
@@ -249,7 +266,7 @@ class TradeRouteChooser extends Panel {
         }
         let aYieldCount = a.route.yieldCountMap.get(this.yieldSortBy) || 0;
         let bYieldCount = b.route.yieldCountMap.get(this.yieldSortBy) || 0;
-        console.error(`Yield amounts for ${Locale.compose(a.route.city.name)}: ${aYieldCount}, vs ${Locale.compose(b.route.city.name)} ${bYieldCount}`)
+        this.slthlogger(`Yield amounts for ${Locale.compose(a.route.city.name)}: ${aYieldCount}, vs ${Locale.compose(b.route.city.name)} ${bYieldCount}`)
         const resourceComparison = bYieldCount - aYieldCount;
 
         if (resourceComparison === 0) {
@@ -407,14 +424,7 @@ class TradeRouteChooser extends Panel {
     }
 
     setupResourceSelector(frame) {
-        this.resourceSelector = document.createElement("fxs-selector");
-		this.resourceSelector.classList.add("m-4", "font-body-lg");
-		this.resourceSelector.setAttribute("enable-shell-nav", "true");
-		this.resourceSelector.setAttribute("data-slot", "header");
-		this.resourceSelector.setAttribute("selected-item-index", "0");
-        //this.resourceSelector.style.height = "10%"
-
-		const resourceTypes = new Set();
+		let resourceTypes = new Set();
 
         this.tradeRoutes.forEach(item => {
           if (item.route.resourceCount instanceof Map) {
@@ -424,7 +434,18 @@ class TradeRouteChooser extends Panel {
           }
         });
 
-        const resourceOptions = Array.from(resourceTypes).filter(resource => !(this.isModern && resource.includes("DISTANT_LANDS"))).map(resource => {
+        resourceTypes = Array.from(resourceTypes).filter(resource => !(resource.includes("DISTANT_LANDS"))).sort((a, b) => {
+          const valueA = resourceClassMap.get(a) || '';
+          const valueB = resourceClassMap.get(b) || '';
+          const valueComparison = valueA.localeCompare(valueB)
+          this.slthlogger(`A: ${valueA}, B: ${valueB} using keys ${a} and ${b}`)
+            if (valueComparison === 0) {
+                return a.localeCompare(b);
+              }
+          return valueA.localeCompare(valueB);
+        });
+
+        const resourceOptions = resourceTypes.filter(resource => !(this.isModern && resource.includes("DISTANT_LANDS"))).map(resource => {
             const resourceSimple = resource.replace("RESOURCE_", "")
             const displayText = resourceSimple.charAt(0).toUpperCase() + resourceSimple.slice(1).toLowerCase();
             return {
@@ -435,57 +456,63 @@ class TradeRouteChooser extends Panel {
 
         if (resourceOptions.length > 0) {
           this.resourceSortBy = resourceOptions[0].value;
+          this.slthlogger(resourceOptions[0].value)
         } else {
           this.resourceSortBy = 'RESOURCE_FISH';
         }
 
-        this.resourceSelector.componentCreatedEvent.on((component) =>
-          component.updateSelectorItems(resourceOptions)
-        );
-
-        this.resourceSelector.addEventListener("dropdown-selection-change", (ev) => {
-          this.resourceSortBy = ev.detail.selectedItem?.value ?? "RESOURCE_FISH";
-          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
-            this.applySort();
-          }
-        });
-        this.resourceSelector.setAttribute("data-audio-focus-ref", "none");
-        this.resourceSelector.classList.add("hidden");
-        // frame.appendChild(this.resourceSelector);
-        const payloadInfo = document.createElement("div");
-        payloadInfo.classList.add("flex", "flex-row", "mx-4", "mb-4");
-        frame.appendChild(payloadInfo);
-        for (const payload of resourceTypes) {
-            const routeEle = document.createElement("fxs-chooser-item");
-            // routeEle.setAttribute("selectable-when-disabled", "true");
-            routeEle.setAttribute("select-on-focus", "true");
-            // routeEle.setAttribute("select-on-activate", "true");
-            routeEle.setAttribute("show-frame-on-hover", "false");
-            // routeEle.setAttribute("data-tooltip-style", "trade-route");
-            routeEle.setAttribute('data-tooltip-anchor', "right");
-            // routeEle.setAttribute('data-tooltip-anchor-offset', "10");
-            // routeEle.setAttribute("data-trade-route-index", tradeRoute.index.toString());
-            routeEle.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
-            routeEle.setAttribute("data-icon-id", payload);
-            routeEle.addEventListener('click', this.resourceTracker);
-            payloadInfo.appendChild(routeEle);
-            const payloadIcon = document.createElement("fxs-icon");
-            payloadIcon.classList.add("size-10", "relative");
-            payloadIcon.setAttribute("data-icon-id", payload);
-            payloadIcon.setAttribute("data-icon-context", "RESOURCE");
-            routeEle.appendChild(payloadIcon);
+        this.resourceSelector = document.createElement("div");
+        this.resourceSelector.classList.add("flex", "flex-col", "mx-4", "mb-4");
+        frame.appendChild(this.resourceSelector);
+        const limiter = 8;
+        let i = 0;
+        let gridLine = document.createElement("div");
+        gridLine.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        let cached_resource_class = resourceClassMap.get(resourceTypes[0])
+        for (const resource of resourceTypes) {
+            if (i === limiter || resourceClassMap.get(resource) !== cached_resource_class) {
+                this.resourceSelector.appendChild(gridLine);
+                gridLine = document.createElement("div");
+                gridLine.classList.add("flex", "flex-row", "mx-4", "mb-4");
+                i = 0;
+                this.slthlogger('added grid');
+            }
+            cached_resource_class = resourceClassMap.get(resource)
+            this.slthlogger(`resource class for ${resource} is ${cached_resource_class}`)
+            const selectionElement = document.createElement("fxs-chooser-item");
+            // selectionElement.setAttribute("selectable-when-disabled", "true");
+            selectionElement.setAttribute("select-on-focus", "true");
+            // selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            // selectionElement.setAttribute("data-tooltip-style", "trade-route");
+            selectionElement.setAttribute('data-tooltip-anchor', "right");
+            // selectionElement.setAttribute('data-tooltip-anchor-offset', "10");
+            // selectionElement.setAttribute("data-trade-route-index", tradeRoute.index.toString());
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-icon-id", resource);
+            selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.addEventListener('chooser-item-selected', this.resourceTracker);
+            gridLine.appendChild(selectionElement);
+            const resourceIcon = document.createElement("fxs-icon");
+            resourceIcon.classList.add("size-10", "relative");
+            resourceIcon.setAttribute("data-icon-id", resource);
+            resourceIcon.setAttribute("data-icon-context", "RESOURCE");
+            selectionElement.appendChild(resourceIcon);
+            if (i === 0) {
+                const resourceType = document.createElement("fxs-icon");
+                resourceType.classList.add("size-4", "absolute", "left-0", "bottom-0");
+                resourceType.setAttribute("data-icon-id", cached_resource_class);
+                resourceType.setAttribute("data-icon-context", "RESOURCECLASS");
+                resourceIcon.appendChild(resourceType);
+            }
+            i += 1
+            gridLine.appendChild(selectionElement);
         }
+        this.resourceSelector.classList.add("hidden");
+        this.resourceSelector.appendChild(gridLine);
     }
     setupYieldSelector(frame) {
-        this.yieldSelector = document.createElement("fxs-selector");
-		this.yieldSelector.classList.add("m-4", "font-body-lg");
-		this.yieldSelector.setAttribute("enable-shell-nav", "true");
-		this.yieldSelector.setAttribute("data-slot", "header");
-		this.yieldSelector.setAttribute("selected-item-index", "0");
-        this.yieldSelector.style.height = "10%";
-
 		const yieldTypes = new Set([]);
-
         this.tradeRoutes.forEach(item => {
           if (item.route.resourceCount instanceof Map) {
             for (const [key, value] of item.route.yieldCountMap.entries()) {
@@ -496,35 +523,52 @@ class TradeRouteChooser extends Panel {
           }
         });
 
-        const yieldOptions = Array.from(yieldTypes).map(yieldType => {
-            let displayText = yieldType.replace("YIELD_", "")
-            displayText = displayText.charAt(0).toUpperCase() + displayText.slice(1).toLowerCase();
-            if (yieldType === 'YIELD_DIPLOMACY') {displayText = 'Influence'}
-            return {
-              label: displayText,  // What shows in the dropdown
-              value: yieldType      // The actual data value used for sorting
-            };
-          }).sort((a, b) => a.label.localeCompare(b.label));
+        // Predefined order
+        const order = ['YIELD_FOOD', 'YIELD_PRODUCTION', 'YIELD_GOLD', 'YIELD_SCIENCE', 'YIELD_CULTURE',
+            'YIELD_HAPPINESS', 'YIELD_DIPLOMACY']
 
+        // Create an ordered array from the set
+        const orderedYields = [];
 
-        if (yieldOptions.length > 0) {
-          this.yieldSortBy = yieldOptions[0].value;
+        // First add items that are in the predefined order
+        order.forEach(key => {
+          if (yieldTypes.has(key)) {
+            orderedYields.push(key);
+          }
+        });
+
+        // Then add remaining items that weren't in the predefined order
+        yieldTypes.forEach(item => {
+          if (!order.includes(item)) {
+            orderedYields.push(item);
+          }
+        });
+
+        if (orderedYields.length > 0) {
+          this.yieldSortBy = orderedYields[0].value;
         } else {
           this.yieldSortBy = 'YIELD_HAPPINESS';
         }
-        this.yieldSelector.componentCreatedEvent.on((component) =>
-          component.updateSelectorItems(yieldOptions)
-        );
 
-        this.yieldSelector.addEventListener("dropdown-selection-change", (ev) => {
-          this.yieldSortBy = ev.detail.selectedItem?.value ?? "YIELD_HAPPINESS";
-          if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_YIELD") {
-            this.applySort();
-          }
-        });
-        this.yieldSelector.setAttribute("data-audio-focus-ref", "none");
-        this.yieldSelector.classList.add("hidden");
+        this.yieldSelector = document.createElement("div");
+        this.yieldSelector.classList.add("flex", "flex-row", "mx-4", "mb-4");
         frame.appendChild(this.yieldSelector);
+        for (const yieldType of orderedYields) {
+            const selectionElement = document.createElement("fxs-chooser-item");
+            selectionElement.setAttribute("select-on-focus", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-icon-id", yieldType);
+            selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.addEventListener('chooser-item-selected', this.yieldTracker);
+            this.yieldSelector.appendChild(selectionElement);
+            const yieldTypeIcon = document.createElement("fxs-icon");
+            yieldTypeIcon.classList.add("size-10", "relative");
+            yieldTypeIcon.setAttribute("data-icon-id", yieldType);
+            yieldTypeIcon.setAttribute("data-icon-context", "DEFAULT");
+            selectionElement.appendChild(yieldTypeIcon);
+        }
+        this.yieldSelector.classList.add("hidden");
     }
 
     setupUpdateSecondSorter(){
@@ -546,21 +590,51 @@ class TradeRouteChooser extends Panel {
     onTrackFailsActivate(event) {
         if (event.target instanceof HTMLElement) {
             const isCurrentlyTracked = event.target.getAttribute('selected');
-            this.failsAtBottom = isCurrentlyTracked === 'true' ? true : false;
-            console.error(`fails at bottom set to ${this.failsAtBottom}`)
+            this.failsAtBottom = (!isCurrentlyTracked === 'true' ? true : false);
+            this.slthlogger(`fails at bottom set to ${this.failsAtBottom}`)
             this.applySort();
         }
     }
 
     onSwitchResourceActivate(event) {
-        console.error(`v2 Trying to set resource of ${event.currentTarget}`)
-        console.error(`v2 Trying to set resource of ${event.currentTarget.getAttribute('data-icon-id')}`)
-        if (event.target instanceof HTMLElement) {
-            this.resourceSortBy = event.currentTarget.getAttribute('data-icon-id');
-            console.error(`Tracked Resource set to ${this.resourceSortBy}`)
-            this.applySort();
+        this.slthlogger(`Trying to set resource of ${event.currentTarget.getAttribute('data-icon-id')}`)
+        if (this.resourceSelectionComponent != event.currentTarget) {
+            if (this.resourceSelectionComponent) {
+                this.resourceSelectionComponent.component.selected = false;
+                this.slthlogger('resource selection pre-existed')
+            }
+            this.slthlogger('resource selection changing')
+            this.resourceSelectionComponent = event.currentTarget;
+            if (event.target instanceof HTMLElement) {
+                 this.resourceSortBy = event.currentTarget.getAttribute('data-icon-id');
+                 this.slthlogger(`Tracked Resource set to ${this.resourceSortBy}`)
+                 this.applySort();
+            }
         }
     }
+    onSwitchYieldActivate(event) {
+        this.slthlogger(`Trying to set yield of ${event.currentTarget.getAttribute('data-icon-id')}`)
+        if (this.yieldSelectionComponent != event.currentTarget) {
+            if (this.yieldSelectionComponent) {
+                this.yieldSelectionComponent.component.selected = false;
+                this.slthlogger('yield selection pre-existed')
+            }
+            this.slthlogger('yield selection changing')
+            this.yieldSelectionComponent = event.currentTarget;
+            if (event.target instanceof HTMLElement) {
+                this.yieldSortBy = event.currentTarget.getAttribute('data-icon-id');
+                this.slthlogger(`Tracked Yield set to ${this.yieldSortBy}`)
+                this.applySort();
+            }
+        }
+    }
+
+
+    slthlogger (input) {
+    if (log_level === 'blackwatch_plaid') {
+        console.error(input)
+    }
+}
 }
 Controls.define('trade-route-chooser', {
     createInstance: TradeRouteChooser,

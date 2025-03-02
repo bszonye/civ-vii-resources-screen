@@ -4,9 +4,11 @@
  * @description Select and get info on trade trade routes
  */
 
- // get GameInfo on what resource does what, this is cursed
-console.error('mapping modifierArgs')
-let my_map = new Map();
+const log_level = 'happy'
+
+ // get GameInfo on what resource does what
+// console.error('mapping modifierArgs')
+let resourceInfoMap = new Map();
 
 // RESOURCECLASS_EMPIRE
 
@@ -31,17 +33,16 @@ GameInfo.GameModifiers.forEach(i => {
 
     if (hasYieldType && hasResourceType && hasPercentMultiplier && hasAmount) {
         // console.error(i.ModifierId)
-        // Extract values
         const resourceType = matchingEntries.find(e => e.Name === "ResourceType").Value;
         const yieldType = matchingEntries.find(e => e.Name === "YieldType").Value;
         const amount = matchingEntries.find(e => e.Name === "Amount").Value;
         const percentMultiplier = matchingEntries.find(e => e.Name === "PercentMultiplier").Value;
 
-        if (!my_map.has(resourceType)) {
-            my_map.set(resourceType, new Map());
+        if (!resourceInfoMap.has(resourceType)) {
+            resourceInfoMap.set(resourceType, new Map());
             // console.error(`Setting resourceType ${resourceType}`)
         }
-        let resourceMap = my_map.get(resourceType);
+        let resourceMap = resourceInfoMap.get(resourceType);
         let propertiesMap = new Map();
         propertiesMap.set('amount', amount);
         propertiesMap.set('percentMultiplier', percentMultiplier);
@@ -54,19 +55,18 @@ GameInfo.GameModifiers.forEach(i => {
          */
     }
     GameInfo.Resources.forEach(resource => {
-        if (my_map.has(resource.ResourceType)) {
-            const existingEntry = my_map.get(resource.ResourceType);
+        if (resourceInfoMap.has(resource.ResourceType)) {
+            const existingEntry = resourceInfoMap.get(resource.ResourceType);
             existingEntry.ResourceClassType = resource.ResourceClassType;
         }
     });
 })
 /*
-my_map.forEach((entry, index) => {console.error(`  Entry ${index}:`);
+resourceInfoMap.forEach((entry, index) => {console.error(`  Entry ${index}:`);
         for (const key in entry) {
           console.error(`    ${key}: ${entry[key]}`);
         }
       });
-
  */
 class TradeRoutesModelImpl {
     constructor() {
@@ -128,8 +128,8 @@ class TradeRoutesModelImpl {
                 const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
                 if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
                     const payloadId = payload.ResourceType || payload.id;
-                    console.error('Resource payload name')
-                    console.error(payloadId)
+                    this.slthlogger('Resource payload name')
+                    this.slthlogger(payloadId)
 
                     if (!payloadMap.has(payloadId)) {
                         payloadMap.set(payloadId, {
@@ -141,10 +141,10 @@ class TradeRoutesModelImpl {
 
                     payloadMap.get(payloadId).count++;
 
-                    if (my_map.has(payloadId)) {
-                        const resourceYields = my_map.get(payloadId)
+                    if (resourceInfoMap.has(payloadId)) {
+                        const resourceYields = resourceInfoMap.get(payloadId)
                         resourceYields.forEach((value, key) => {
-                          // console.error(`yield: ${key}`, value);
+                          this.slthlogger(`yield: ${key}`, value);
                           yieldMapCount.set(key, yieldMapCount.get(key) + 1);
                         });
                     }
@@ -285,6 +285,11 @@ class TradeRoutesModelImpl {
                 return 6;
         }
         return 0;
+    }
+    slthlogger (input) {
+        if (log_level === 'blackwatch_plaid') {
+            console.error(input)
+        }
     }
 }
 export const TradeRoutesModel = new TradeRoutesModelImpl();

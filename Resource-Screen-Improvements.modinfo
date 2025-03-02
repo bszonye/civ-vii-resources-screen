@@ -23,7 +23,6 @@
 			</Properties>
 			<Actions>
 				<ImportFiles>
-					<Item>ui/resource-allocation/screen-resource-allocation.js</Item>
 					<Item>ui/trade-route-chooser/trade-route-chooser.js</Item>
 					<Item>ui/trade-route-chooser/trade-routes-model.js</Item>
 				</ImportFiles>

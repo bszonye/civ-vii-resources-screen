@@ -6,5 +6,6 @@ VALUES
     ('LOC_TRADE_LENS_SORT_DEFAULT',		'en_US',	"Count "),
     ('LOC_TRADE_LENS_SORT_BY_LEADER',		'en_US',	"Leader"),
     ('LOC_TRADE_LENS_DESCRIPTION_ALT',		'en_US',	"Create a Trade Route with:"),
-    ('LOC_TRADE_LENS_DESCRIPTION',		'en_US',	"Possible Trade Routes:")
+    ('LOC_TRADE_LENS_DESCRIPTION',		'en_US',	"Possible Trade Routes:"),
+    ('LOC_SLTH_TRADE_TICKBOX',		'en_US',	"Show All")
     ;
