@@ -37,11 +37,28 @@ class TradeRouteChooser extends Panel {
         title.setAttribute("data-slot", "header");
         title.setAttribute("title", this.isModern ? "LOC_TRADE_LENS_TITLE_ALT" : "LOC_TRADE_LENS_TITLE");
         frame.appendChild(title);
+
+        const headerContainer = document.createElement("div");
+        headerContainer.classList.add("header-container");
+        headerContainer.style.display = "flex"; // Make this a flex container
+        headerContainer.style.flexDirection = "row"; // Arrange items horizontally
+        headerContainer.setAttribute("data-slot", "header");
+        frame.appendChild(headerContainer);
         const description = document.createElement("div");
         description.classList.add("text-center", "mx-3\\.5", "font-body-sm");
         description.setAttribute("data-slot", "header");
+        description.classList.add("text-center", "font-body-sm");
+        description.style.marginLeft = "1rem"; // 12px equivalent in most systems
+        description.style.flexShrink = "1"; // Allow description to shrink if needed
+        description.style.minWidth = "0"; // Allow text to wrap properly
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
-        frame.appendChild(description);
+        headerContainer.appendChild(description);
+
+        const inner_frame = document.createElement("div");
+        inner_frame.style.display = "flex";
+        inner_frame.style.flexDirection = "column";
+        headerContainer.appendChild(inner_frame);
+        inner_frame.style.height = "10%"
 
         const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" },
         { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }, { label: "LOC_TRADE_LENS_SORT_BY_YIELD" }];
@@ -51,7 +68,8 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.setAttribute("selected-item-index", "0");
         this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
-        frame.appendChild(this.sortOrder);
+        this.sortOrder.style.height = "10%"
+        inner_frame.appendChild(this.sortOrder);
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
         frame.appendChild(this.routesListEl);
         if (this.isModern) {
@@ -65,8 +83,8 @@ class TradeRouteChooser extends Panel {
         }
 
         this.setupUpdateSecondSorter()
-		this.setupResourceSelector(frame)
-        this.setupYieldSelector(frame)
+		this.setupResourceSelector(inner_frame)
+        this.setupYieldSelector(inner_frame)
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
     }
@@ -384,7 +402,7 @@ class TradeRouteChooser extends Panel {
 		this.resourceSelector.setAttribute("enable-shell-nav", "true");
 		this.resourceSelector.setAttribute("data-slot", "header");
 		this.resourceSelector.setAttribute("selected-item-index", "0");
-
+        this.resourceSelector.style.height = "10%"
 
 		const resourceTypes = new Set();
 
@@ -431,6 +449,7 @@ class TradeRouteChooser extends Panel {
 		this.yieldSelector.setAttribute("enable-shell-nav", "true");
 		this.yieldSelector.setAttribute("data-slot", "header");
 		this.yieldSelector.setAttribute("selected-item-index", "0");
+        this.yieldSelector.style.height = "10%";
 
 		const yieldTypes = new Set([]);
 
