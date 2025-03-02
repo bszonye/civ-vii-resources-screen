@@ -188,7 +188,7 @@ class TradeRouteChooser extends Panel {
         }
     }
     defaultSort(a, b) {
-        if (this.failsAtBottom) {
+        if (!this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
                 return statusComparison;
@@ -197,7 +197,7 @@ class TradeRouteChooser extends Panel {
         return (b.route.importPayloads.length) - (a.route.importPayloads.length);
     }
     leaderSort(a, b) {
-        if (this.failsAtBottom) {
+        if (!this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
                 Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
@@ -208,7 +208,7 @@ class TradeRouteChooser extends Panel {
     }
 
     resourceSort(a, b) {
-        if (this.failsAtBottom) {
+        if (!this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
                 Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
@@ -228,7 +228,7 @@ class TradeRouteChooser extends Panel {
     }
 
     modernResourceSort(a, b) {
-        if (this.failsAtBottom) {
+        if (!this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
                 Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
@@ -257,7 +257,7 @@ class TradeRouteChooser extends Panel {
     }
 
     yieldSort(a, b) {
-        if (this.failsAtBottom) {
+        if (!this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
                 Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
@@ -590,7 +590,7 @@ class TradeRouteChooser extends Panel {
     onTrackFailsActivate(event) {
         if (event.target instanceof HTMLElement) {
             const isCurrentlyTracked = event.target.getAttribute('selected');
-            this.failsAtBottom = (!isCurrentlyTracked === 'true' ? true : false);
+            this.failsAtBottom = isCurrentlyTracked === 'true' ? true : false;
             this.slthlogger(`fails at bottom set to ${this.failsAtBottom}`)
             this.applySort();
         }
