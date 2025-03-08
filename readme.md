@@ -3,4 +3,4 @@ It does a secondary filter on number of generic resources, similar to the defaul
 
 Now go, get those fifty Tea resources, you magnificent beast, you.
 
-version 1.21
+version 1.22

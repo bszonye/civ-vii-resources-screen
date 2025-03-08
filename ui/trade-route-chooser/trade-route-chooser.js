@@ -26,10 +26,12 @@ class TradeRouteChooser extends Panel {
     constructor(root) {
         super(root);
         this.isModern = Game.age == Database.makeHash("AGE_MODERN");
+        this.isExploration = Game.age == Database.makeHash("AGE_EXPLORATION");
         this.failsAtBottom = true
         this.failsAtBottomTracker = this.onTrackFailsActivate.bind(this);
         this.resourceTracker = this.onSwitchResourceActivate.bind(this);
         this.yieldTracker = this.onSwitchYieldActivate.bind(this);
+        this.classTracker = this.onSwitchClassActivate.bind(this);
         this.sortOrder = document.createElement("fxs-selector");
         this.routesListEl = document.createElement("fxs-vslot");
         this.sortMode = "LOC_TRADE_LENS_SORT_DEFAULT";
@@ -40,42 +42,29 @@ class TradeRouteChooser extends Panel {
             .getProjectedTradeRoutes()
             .map(route => ({ route: route, element: this.createTradeRouteChooserItem(route) }));
         const fragment = document.createDocumentFragment();
-        const frame = document.createElement("fxs-subsystem-frame");
-        frame.setAttribute("no-close", "true");
-        fragment.appendChild(frame);
+        this.frame = document.createElement("fxs-subsystem-frame");
+        // frame.setAttribute("no-close", "true");
+        fragment.appendChild(this.frame);
         const titleContainer = document.createElement("div");
         titleContainer.classList.add("header-container");
         titleContainer.style.display = "flex";
         titleContainer.style.flexDirection = "row";
         titleContainer.setAttribute("data-slot", "header");
-        frame.appendChild(titleContainer);
+        this.frame.appendChild(titleContainer);
 
         const title = document.createElement("fxs-header");
         title.setAttribute("title", this.isModern ? "LOC_TRADE_LENS_TITLE_ALT" : "LOC_TRADE_LENS_TITLE");
         title.style.marginLeft = "1rem";
         titleContainer.appendChild(title)
 
-        const checkBoxText = document.createElement('p');
-        checkBoxText.classList.add('font-title-sm', 'leading-loose', 'text-gradient-secondary');
-        checkBoxText.classList.add("text-center", "font-body-sm");
-        checkBoxText.style.marginLeft = "1rem";
-        checkBoxText.innerHTML = Locale.compose('LOC_SLTH_TRADE_TICKBOX');
-        titleContainer.appendChild(checkBoxText);
-
-        const checkBox = document.createElement('fxs-checkbox');
-        checkBox.setAttribute('selected', `${this.isTracked}`);
-        checkBox.setAttribute("tabindex", "-1");
-        checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
-        checkBox.addEventListener('action-activate', this.failsAtBottomTracker);
-        titleContainer.appendChild(checkBox);
-
         const headerContainer = document.createElement("div");
         headerContainer.classList.add("header-container");
         headerContainer.style.display = "flex";
         headerContainer.style.flexDirection = "row";
         headerContainer.setAttribute("data-slot", "header");
-        frame.appendChild(headerContainer);
+        this.frame.appendChild(headerContainer);
 
+        /*
         const description = document.createElement("div");
         description.classList.add("text-center", "mx-3\\.5", "font-body-sm");
         description.setAttribute("data-slot", "header");
@@ -85,6 +74,22 @@ class TradeRouteChooser extends Panel {
         description.style.minWidth = "0";
         description.innerHTML = this.isModern ? Locale.compose("LOC_TRADE_LENS_DESCRIPTION_ALT") : Locale.compose("LOC_TRADE_LENS_DESCRIPTION");
         headerContainer.appendChild(description);
+
+         */
+
+        this.checkBoxText = document.createElement('p');
+        this.checkBoxText.classList.add('font-title-sm', 'leading-loose', 'text-gradient-secondary');
+        this.checkBoxText.classList.add("text-center", "font-body-sm");
+        this.checkBoxText.style.marginLeft = "1rem";
+        // this.checkBoxText.innerHTML = Locale.compose('LOC_SLTH_TRADE_TICKBOX');
+        this.checkBoxText.innerHTML = Locale.compose('Prioritise Eligible');
+        headerContainer.appendChild(this.checkBoxText);
+
+        this.checkBox = document.createElement('fxs-checkbox');
+        this.checkBox.setAttribute('selected', `${this.failsAtBottom}`);
+        this.checkBox.setAttribute("tabindex", "-1");
+        this.checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
+        headerContainer.appendChild(this.checkBox);
 
         const sortOptions = [{ label: "LOC_TRADE_LENS_SORT_DEFAULT" }, { label: "LOC_TRADE_LENS_SORT_BY_LEADER" },
         { label: "LOC_TRADE_LENS_SORT_BY_RESOURCE" }, { label: "LOC_TRADE_LENS_SORT_BY_YIELD" }];
@@ -96,12 +101,13 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
         headerContainer.appendChild(this.sortOrder);
 
-		this.setupResourceSelector(frame)
+		this.setupResourceSelector(this.frame)
         this.setupUpdateSecondSorter()
-        this.setupYieldSelector(frame)
+        this.setupYieldSelector(this.frame)
+        this.setupClassSelector(this.frame)
 
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
-        frame.appendChild(this.routesListEl);
+        this.frame.appendChild(this.routesListEl);
         if (this.isModern) {
             this.confirmButton = document.createElement("fxs-hero-button");
             this.confirmButton.classList.add("mx-7", "my-5");
@@ -109,8 +115,12 @@ class TradeRouteChooser extends Panel {
             this.confirmButton.setAttribute("caption", "LOC_TRADE_LENS_CONFIRM_ROUTE");
             this.confirmButton.setAttribute("disabled", "true");
             this.confirmButton.addEventListener("action-activate", () => this.checkAndStartTradeRoute());
-            frame.appendChild(this.confirmButton);
+            this.frame.appendChild(this.confirmButton);
         }
+
+        this.requestClose = () => {
+            this.toggleClose(true);
+        };
 
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
@@ -123,6 +133,8 @@ class TradeRouteChooser extends Panel {
         this.Root.addEventListener('navigate-input', this.navigateInputListener);
         this.Root.addEventListener('engine-input', this.engineInputListener);
         window.addEventListener(ActiveDeviceTypeChangedEventName, this.activeDeviceTypeListener, true);
+        this.frame.addEventListener("subsystem-frame-close", this.requestClose);
+        this.checkBox.addEventListener('action-activate', this.failsAtBottomTracker);
         TradeRouteChooser._activeChooser = this;
         Focus.setContextAwareFocus(this.routesListEl, this.Root);
     }
@@ -134,7 +146,20 @@ class TradeRouteChooser extends Panel {
         this.Root.removeEventListener('navigate-input', this.navigateInputListener);
         this.Root.removeEventListener('engine-input', this.engineInputListener);
         window.removeEventListener(ActiveDeviceTypeChangedEventName, this.activeDeviceTypeListener, true);
+        this.frame.removeEventListener("subsystem-frame-close", this.requestClose);
+        this.checkBox.removeEventListener('action-activate', this.failsAtBottomTracker);
     }
+
+    toggleClose(force) {
+		const hidden = force ?? !this.Root.classList.contains("hidden");
+		this.Root.classList.toggle("hidden", hidden);
+        console.error('slth toggle')
+		if (hidden) {
+			LensManager.setActiveLens('fxs-default-lens');
+			ContextManager.pop("trade-route-chooser");
+			ViewManager.handleReceiveFocus();
+		}
+	}
     onReceiveFocus() {
         super.onReceiveFocus();
         Focus.setContextAwareFocus(this.routesListEl, this.Root);
@@ -188,7 +213,7 @@ class TradeRouteChooser extends Panel {
         }
     }
     defaultSort(a, b) {
-        if (!this.failsAtBottom) {
+        if (this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS);
             if (statusComparison !== 0) {
                 return statusComparison;
@@ -274,9 +299,59 @@ class TradeRouteChooser extends Panel {
         }
         return resourceComparison;
     }
+
+    classSort(a, b) {
+        if (!this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
+        }
+        const aClassCount = this.getClassCount(a.route, this.classSortBy);
+        const bClassCount = this.getClassCount(b.route, this.classSortBy);
+        const stringA = JSON.stringify(aClassCount, null, 2)
+        const stringB = JSON.stringify(bClassCount, null, 2)
+        console.error(`Class amounts for ${Locale.compose(a.route.city.name)}: ${stringA}, vs ${Locale.compose(b.route.city.name)} ${stringB}`)
+        const resourceComparison = bClassCount - aClassCount;
+
+        if (resourceComparison === 0) {
+            return (b.route.importPayloads.length) - (a.route.importPayloads.length);
+        }
+        return resourceComparison;
+    }
+
+    getClassCount (route, resourceClass) {
+        if (!this.routeClassCounts) {
+            this.routeClassCounts = new Map();
+        }
+        const value = this.routeClassCounts.get(route.city.name);
+        if (value !== undefined) {
+            console.error("Found value:", JSON.stringify(value, null, 2))
+            return value.get(resourceClass) || 0
+        } else {
+            console.error("-------------------");
+            const routeClasses =  new Map();
+            for (const payload of route.importPayloads) {
+                const resourceClassType = payload.ResourceClassType;
+                routeClasses.set(resourceClassType, (routeClasses.get(resourceClassType) ?? 0) + 1);
+                console.error(`${resourceClassType} ++`);
+            }
+            this.routeClassCounts.set(route.city.name, routeClasses)
+            console.error(`count of ${resourceClass}`)
+            console.error(JSON.stringify(routeClasses.get(resourceClass) || 0, null, 2))
+            return routeClasses.get(resourceClass) || 0
+        }
+    }
     applySort() {
         if (this.sortMode == "LOC_TRADE_LENS_SORT_DEFAULT") {
-            this.tradeRoutes.sort((a, b) => this.defaultSort(a, b));
+            if (this.classSortBy != 'ALL') {
+                this.tradeRoutes.sort((a, b) => this.classSort(a, b));
+            }
+            else {
+                this.tradeRoutes.sort((a, b) => this.defaultSort(a, b));
+            }
+
         }
         else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_LEADER") {
             this.tradeRoutes.sort((a, b) => this.leaderSort(a, b));
@@ -571,6 +646,50 @@ class TradeRouteChooser extends Panel {
         this.yieldSelector.classList.add("hidden");
     }
 
+    setupClassSelector(frame) {
+        const resourceClasses = ['ALL', 'RESOURCECLASS_BONUS', 'RESOURCECLASS_CITY', 'RESOURCECLASS_EMPIRE']
+        if (this.isModern) {
+            resourceClasses.push('RESOURCECLASS_FACTORY')
+        }
+        if (this.isExploration) {
+            // resourceClasses.push('RESOURCECLASS_TREASURE')
+        }
+
+        this.classSortBy = resourceClasses[0];
+        // console.error(`starting class : ${this.classSortBy}`)
+
+        this.classSelector = document.createElement("div");
+        this.classSelector.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        frame.appendChild(this.classSelector);
+        for (const classType of resourceClasses) {
+            const selectionElement = document.createElement("fxs-chooser-item");
+            selectionElement.setAttribute("select-on-focus", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-icon-id", classType);                   // dont work
+            selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.addEventListener('chooser-item-selected', this.classTracker);
+            this.classSelector.appendChild(selectionElement);
+            if (classType !== 'ALL') {
+                const classTypeIcon = document.createElement("fxs-icon");
+                classTypeIcon.classList.add("size-10", "relative");
+                classTypeIcon.setAttribute("data-icon-id", classType);
+                classTypeIcon.setAttribute("data-icon-context", "RESOURCECLASS");
+                selectionElement.appendChild(classTypeIcon);
+            }
+            else {
+                const description = document.createElement("div");
+                description.classList.add("text-center", "mx-2\\.5", "font-body-sm");
+                description.setAttribute("data-slot", "header");
+                description.classList.add("text-center", "font-body-sm");
+                description.style.flexShrink = "1";
+                description.style.minWidth = "0";
+                description.innerHTML = 'All';
+                selectionElement.appendChild(description);
+            }
+        }
+    }
+
     setupUpdateSecondSorter(){
         this.sortOrder.addEventListener("dropdown-selection-change", (ev) => {
             this.sortMode = ev.detail.selectedItem?.label ?? "LOC_TRADE_LENS_SORT_DEFAULT";
@@ -583,6 +702,11 @@ class TradeRouteChooser extends Panel {
                 this.yieldSelector.classList.remove("hidden");
               } else {
                 this.yieldSelector.classList.add("hidden");
+              }
+            if (this.sortMode === "LOC_TRADE_LENS_SORT_DEFAULT") {
+                this.classSelector.classList.remove("hidden");
+              } else {
+                this.classSelector.classList.add("hidden");
               }
             this.applySort();
         });
@@ -624,6 +748,23 @@ class TradeRouteChooser extends Panel {
             if (event.target instanceof HTMLElement) {
                 this.yieldSortBy = event.currentTarget.getAttribute('data-icon-id');
                 this.slthlogger(`Tracked Yield set to ${this.yieldSortBy}`)
+                this.applySort();
+            }
+        }
+    }
+
+    onSwitchClassActivate(event) {
+        this.slthlogger(`Trying to set class of ${event.currentTarget.getAttribute('data-icon-id')}`)
+        if (this.classSelectionComponent != event.currentTarget) {
+            if (this.classSelectionComponent) {
+                this.classSelectionComponent.component.selected = false;
+                this.slthlogger('class selection pre-existed')
+            }
+            this.slthlogger('class selection changing')
+            this.classSelectionComponent = event.currentTarget;
+            if (event.target instanceof HTMLElement) {
+                this.classSortBy = event.currentTarget.getAttribute('data-icon-id');
+                this.slthlogger(`Tracked Class set to ${this.classSortBy}`)
                 this.applySort();
             }
         }

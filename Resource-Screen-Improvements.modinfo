@@ -3,7 +3,7 @@
 	xmlns="ModInfo">
 	<Properties>
 		<Name>Resource Screen Improvements</Name>
-		<Description>Improves both the Trade Panel and the Resources Screen</Description>
+		<Description>Improves the Trade Panel with extra filters</Description>
 		<Authors>Slothoth</Authors>
 		<Package>Mod</Package>
 		<AffectsSavedGames>0</AffectsSavedGames>

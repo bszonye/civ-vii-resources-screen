@@ -114,7 +114,7 @@ class TradeRoutesModelImpl {
             const exportYieldAmounts = [];
 
             const payloadMap = new Map();               // per ResourceType counts
-            const yieldMapCount = new Map([                                // per City YieldType counts
+            const yieldMapCount = new Map([             // per City YieldType counts
               ['YIELD_FOOD', 0],
               ['YIELD_PRODUCTION', 0],
               ['YIELD_GOLD', 0],
