@@ -126,7 +126,7 @@ class TradeRoutesModelImpl {
             const processedPayloadIds = new Set();
             for (const resource of tradeRoute.importPayloads) {
                 const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
-                if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
+                if (payload) {
                     const payloadId = payload.ResourceType || payload.id;
                     this.slthlogger('Resource payload name')
                     this.slthlogger(payloadId)
@@ -157,7 +157,7 @@ class TradeRoutesModelImpl {
             // Second pass: create ordered array with sequential identical payloads
             for (const resource of tradeRoute.importPayloads) {
                 const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
-                if (payload && payload.ResourceClassType !== "RESOURCECLASS_TREASURE") {
+                if (payload) {
                     const payloadId = payload.ResourceType || payload.id;
 
                     // Only process each unique payload type once

@@ -8,5 +8,6 @@ VALUES
     ('LOC_TRADE_LENS_DESCRIPTION_ALT',		'en_US',	'Create a Trade Route with:'),
     ('LOC_TRADE_LENS_DESCRIPTION',		'en_US',	'Possible Trade Routes:'),
     ('LOC_SLTH_TRADE_TICKBOX',		'en_US',	'Prioritise Eligible'),
-    ('LOC_TRADE_LENS_TITLE', 'en_US', 'Trade Routes')
-    ;
+    ('LOC_TRADE_LENS_TITLE', 'en_US', 'Trade Routes'),
+    ('LOC_ALL_NAME', 'en_US', 'All Resources'),
+    ('LOC_ALL_DESCRIPTION', 'en_US', 'All Resources');
