@@ -81,121 +81,143 @@ class TradeRoutesModelImpl {
     getProjectedTradeRoutes() {
         return this.projectedTradeRoutes;
     }
-    calculateProjectedTradeRoutes() {
+    /**
+   * Process a trade route.
+   * @param index Which trade route to process.
+   * @param possibleTradeRoutes The collection of trade routes
+   * @returns true if successful, false on error
+   */
+    calculateRoute(tradeRoute) {
+       const targetCity = Cities.get(tradeRoute.targetCityId);
+       if (!targetCity) {
+          console.error(
+            `TradeRoutesModel - City not found calculating route for ${ComponentID.toLogString(tradeRoute.targetCityId)}`
+          );
+          return false;
+       }
+        const player = Players.get(targetCity.owner);
+        if (!player) {
+          console.error(`TradeRoutesModel - Player not found calculating route for player ${targetCity.owner}`);
+          return false;
+        }
+        const cityPlotIndex = GameplayMap.getIndexFromLocation(targetCity.location);
+        const leaderIcon = GameInfo.Leaders.lookup(player.leaderType)?.LeaderType ?? "";
+        const leaderName = player.leaderName;
+        const isLandRoute = tradeRoute.domain === DomainType.DOMAIN_LAND;
+        const statusIcon = this.getTradeRouteStatusIcon(tradeRoute.status, isLandRoute);
+        const statusTexts = this.getTradeActionText(tradeRoute.status, targetCity, leaderName, isLandRoute);
+        const importPayloads = [];
+        const exportYieldAmounts = [];
+
+        const payloadMap = new Map();               // per ResourceType counts
+        const yieldMapCount = new Map([             // per City YieldType counts
+          ['YIELD_FOOD', 0],
+          ['YIELD_PRODUCTION', 0],
+          ['YIELD_GOLD', 0],
+          ['YIELD_SCIENCE', 0],
+          ['YIELD_CULTURE', 0],
+          ['YIELD_HAPPINESS', 0],
+          ['YIELD_DIPLOMACY', 0]
+        ]);
+        const processedPayloadIds = new Set();
+        for (const resource of tradeRoute.importPayloads) {
+            const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
+            if (payload) {
+                const payloadId = payload.ResourceType || payload.id;
+                this.slthlogger('Resource payload name')
+                this.slthlogger(payloadId)
+
+                if (!payloadMap.has(payloadId)) {
+                    payloadMap.set(payloadId, {
+                        payload: payload,
+                        count: 0,
+                        firstIndex: importPayloads.length // Track first appearance
+                    });
+                }
+
+                payloadMap.get(payloadId).count++;
+
+                if (resourceInfoMap.has(payloadId)) {
+                    const resourceYields = resourceInfoMap.get(payloadId)
+                    resourceYields.forEach((value, key) => {
+                      this.slthlogger(`yield: ${key}`, value);
+                      yieldMapCount.set(key, yieldMapCount.get(key) + 1);
+                    });
+                }
+                else {console.log(`Yield mapper had no entries for ${payloadId}`)}
+
+                payloadMap[payloadId] += 1;
+            }
+        }
+
+        // Second pass: create ordered array with sequential identical payloads
+        for (const resource of tradeRoute.importPayloads) {
+            const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
+            if (payload) {
+                const payloadId = payload.ResourceType || payload.id;
+
+                // Only process each unique payload type once
+                if (!processedPayloadIds.has(payloadId)) {
+                    processedPayloadIds.add(payloadId);
+                    const count = payloadMap.get(payloadId).count;
+                    for (let i = 0; i < count; i++) {
+                        importPayloads.push(payload);
+                    }
+                }
+            }
+        }
+        for (const yieldAmount of tradeRoute.exportYields) {
+            const yieldName = GameInfo.Yields.lookup(yieldAmount.yieldType)?.YieldType ?? "";
+            const yieldStyle = yieldName.toLowerCase().replace(/_/g, "-");
+            exportYieldAmounts.push(Locale.compose('LOC_TRADE_LENS_YIELD', yieldStyle, yieldAmount.amount, yieldName));
+        }
+        const exportYieldsString = Locale.compose("LOC_TRADE_LENS_YIELD_EXPORT", exportYieldAmounts.join(", "), targetCity.name);
+        this.projectedTradeRoutes.push({
+            index: this.projectedTradeRoutes.length,
+            city: targetCity,
+            cityPlotIndex,
+            leaderIcon,
+            leaderName,
+            status: tradeRoute.status,
+            statusIcon,
+            statusText: statusTexts.statusText,
+            statusTooltip: statusTexts.statusTooltip,
+            statusTooltipReason: statusTexts.statusTooltipReason,
+            importPayloads,
+            exportYields: tradeRoute.exportYields,
+            exportYieldsString,
+            pathPlots: tradeRoute.pathPlots,
+            resourceCount: payloadMap,
+            yieldCountMap: yieldMapCount
+        });
+        return true;
+    }
+    async calculateProjectedTradeRoutes() {
         const localPlayerId = GameContext.localPlayerID;
         const localPlayer = Players.get(localPlayerId);
         if (!localPlayer) {
-            console.error("TradeRoutesModel - No local player, cannot calculate trade routes");
-            return [];
+          console.error("TradeRoutesModel - No local player, cannot calculate trade routes");
+          return [];
         }
-        this.projectedTradeRoutes = [];
         const possibleTradeRoutes = localPlayer.Trade?.projectPossibleTradeRoutes();
         if (!possibleTradeRoutes) {
-            return [];
+          return [];
         }
-        for (const tradeRoute of possibleTradeRoutes) {
-            const targetCity = Cities.get(tradeRoute.targetCityId);
-            if (!targetCity) {
-                console.error("TradeRoutesModel - Unable to project trade route - City not found!");
-                continue;
+        this.projectedTradeRoutes = [];
+        let index = 0;
+        return new Promise((resolve) => {
+          const processNextRoute = () => {
+            if (index >= possibleTradeRoutes.length) {
+              resolve(this.projectedTradeRoutes);
+              return;
             }
-            const player = Players.get(targetCity.owner);
-            if (!player) {
-                console.error("TradeRoutesModel - Unable to project trade route - Player not found!");
-                continue;
-            }
-            const cityPlotIndex = GameplayMap.getIndexFromLocation(targetCity.location);
-            const leaderIcon = GameInfo.Leaders.lookup(player.leaderType)?.LeaderType ?? "";
-            const leaderName = player.leaderName;
-            const isLandRoute = tradeRoute.domain == DomainType.DOMAIN_LAND;
-            const statusIcon = this.getTradeRouteStatusIcon(tradeRoute.status, isLandRoute);
-            const statusTexts = this.getTradeActionText(tradeRoute.status, targetCity, leaderName, isLandRoute);
-            const importPayloads = [];
-            const exportYieldAmounts = [];
-
-            const payloadMap = new Map();               // per ResourceType counts
-            const yieldMapCount = new Map([             // per City YieldType counts
-              ['YIELD_FOOD', 0],
-              ['YIELD_PRODUCTION', 0],
-              ['YIELD_GOLD', 0],
-              ['YIELD_SCIENCE', 0],
-              ['YIELD_CULTURE', 0],
-              ['YIELD_HAPPINESS', 0],
-              ['YIELD_DIPLOMACY', 0]
-            ]);
-            const processedPayloadIds = new Set();
-            for (const resource of tradeRoute.importPayloads) {
-                const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
-                if (payload) {
-                    const payloadId = payload.ResourceType || payload.id;
-                    this.slthlogger('Resource payload name')
-                    this.slthlogger(payloadId)
-
-                    if (!payloadMap.has(payloadId)) {
-                        payloadMap.set(payloadId, {
-                            payload: payload,
-                            count: 0,
-                            firstIndex: importPayloads.length // Track first appearance
-                        });
-                    }
-
-                    payloadMap.get(payloadId).count++;
-
-                    if (resourceInfoMap.has(payloadId)) {
-                        const resourceYields = resourceInfoMap.get(payloadId)
-                        resourceYields.forEach((value, key) => {
-                          this.slthlogger(`yield: ${key}`, value);
-                          yieldMapCount.set(key, yieldMapCount.get(key) + 1);
-                        });
-                    }
-                    else {console.log(`Yield mapper had no entries for ${payloadId}`)}
-
-                    payloadMap[payloadId] += 1;
-                }
-            }
-
-            // Second pass: create ordered array with sequential identical payloads
-            for (const resource of tradeRoute.importPayloads) {
-                const payload = GameInfo.Resources.lookup(resource.uniqueResource.resource);
-                if (payload) {
-                    const payloadId = payload.ResourceType || payload.id;
-
-                    // Only process each unique payload type once
-                    if (!processedPayloadIds.has(payloadId)) {
-                        processedPayloadIds.add(payloadId);
-                        const count = payloadMap.get(payloadId).count;
-                        for (let i = 0; i < count; i++) {
-                            importPayloads.push(payload);
-                        }
-                    }
-                }
-            }
-            for (const yieldAmount of tradeRoute.exportYields) {
-                const yieldName = GameInfo.Yields.lookup(yieldAmount.yieldType)?.YieldType ?? "";
-                const yieldStyle = yieldName.toLowerCase().replace(/_/g, "-");
-                exportYieldAmounts.push(Locale.compose('LOC_TRADE_LENS_YIELD', yieldStyle, yieldAmount.amount, yieldName));
-            }
-            const exportYieldsString = Locale.compose("LOC_TRADE_LENS_YIELD_EXPORT", exportYieldAmounts.join(", "), targetCity.name);
-            this.projectedTradeRoutes.push({
-                index: this.projectedTradeRoutes.length,
-                city: targetCity,
-                cityPlotIndex,
-                leaderIcon,
-                leaderName,
-                status: tradeRoute.status,
-                statusIcon,
-                statusText: statusTexts.statusText,
-                statusTooltip: statusTexts.statusTooltip,
-                statusTooltipReason: statusTexts.statusTooltipReason,
-                importPayloads,
-                exportYields: tradeRoute.exportYields,
-                exportYieldsString,
-                pathPlots: tradeRoute.pathPlots,
-                resourceCount: payloadMap,
-                yieldCountMap: yieldMapCount
-            });
-        }
-        return this.projectedTradeRoutes;
+            const tradeRoute = possibleTradeRoutes[index];
+            this.calculateRoute(tradeRoute);
+            index++;
+            requestAnimationFrame(processNextRoute);
+          };
+          requestAnimationFrame(processNextRoute);
+        });
     }
     getTradeRouteStatusIcon(status, isLandRoute) {
         switch (status) {
@@ -286,12 +308,29 @@ class TradeRoutesModelImpl {
         }
         return 0;
     }
+
     slthlogger (input) {
         if (log_level === 'blackwatch_plaid') {
             console.error(input)
         }
     }
 }
-export const TradeRoutesModel = new TradeRoutesModelImpl();
+function getResourceTypeIcon(resource, targetCity) {
+  const localPlayerId = GameContext.localPlayerID;
+  const localPlayer = Players.get(localPlayerId);
+  if (!localPlayer) {
+    console.error("TradeRoutesModel - No local player, cannot calculate trade routes");
+    return resource.ResourceClassType;
+  }
+  const distantLand = localPlayer.isDistantLands(targetCity.location);
+  const isTreasureResource = resource.ResourceClassType == "RESOURCECLASS_TREASURE";
+  if (distantLand && isTreasureResource) {
+    return "RESOURCECLASS_TREASURE_FLEET";
+  }
+  return resource.ResourceClassType;
+}
+const TradeRoutesModel = new TradeRoutesModelImpl();
+
+export { TradeRoutesModel, getResourceTypeIcon };
 
 //# sourceMappingURL=file:///base-standard/ui/trade-route-chooser/trade-routes-model.js.map

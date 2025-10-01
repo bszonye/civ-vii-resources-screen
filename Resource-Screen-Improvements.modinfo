@@ -2,8 +2,8 @@
 <Mod id="resource-fixes-deadbeef" version="1"
 	xmlns="ModInfo">
 	<Properties>
-		<Name>Resource Screen Improvements</Name>
-		<Description>Improves the Trade Panel with extra filters</Description>
+		<Name>Trade Chooser Improvements</Name>
+		<Description>Improves the Trade Chooser Panel with extra filters for different Resource Classes (Empire/City/Treasure/Factory), ResourceTypes (CTRL-F Camel) and even YieldTypes.</Description>
 		<Authors>Slothoth</Authors>
 		<Package>Mod</Package>
 		<AffectsSavedGames>0</AffectsSavedGames>
