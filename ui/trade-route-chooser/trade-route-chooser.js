@@ -1,13 +1,43 @@
-import {A as Audio} from '/core/ui/input/focus-manager.js';
-import {F as Focus} from '/core/ui/input/focus-support.chunk.js';
+import { Audio } from '/core/ui/audio-base/audio-support.js'
+import ActionHandler from '/core/ui/input/action-handler.js';
+import { ActiveDeviceTypeChangedEventName } from '/core/ui/input/input-events.js'
+
+import {Focus} from '/core/ui/input/focus-support.js';
 import {InterfaceMode} from '../../../core/ui/interface-modes/interface-modes.js';
-import {C as CityBannerManager} from '/base-standard/ui/city-banners/city-banner-manager.chunk.js';
+import LensManager from '/core/ui/lenses/lens-manager.js';
+import NavTray from '/core/ui/navigation-tray/model-navigation-tray.js';
+import Panel from '/core/ui/panel-support.js';
+import { HideMiniMapEvent } from '../mini-map/panel-mini-map.js';
 import {TradeRoutesModel, getResourceTypeIcon} from '/base-standard/ui/trade-route-chooser/trade-routes-model.js';
-import ActionHandler, {ActiveDeviceTypeChangedEventName} from '/core/ui/input/action-handler.js';
-import {N as NavTray} from '/core/ui/navigation-tray/model-navigation-tray.chunk.js';
-import {P as Panel} from '/core/ui/panel-support.chunk.js';
-import {L as LensManager} from '/core/ui/lenses/lens-manager.chunk.js';
+import { UnitFlagManager } from '../unit-flags/unit-flag-manager.js';
 import WorldInput from '/base-standard/ui/world-input/world-input.js';
+import '/core/ui/framework.js';
+import '/core/ui/input/cursor.js';
+import '/core/ui-next/services/focus-manager.js';
+import '/core/ui/views/view-manager.js';
+import '/core/ui/input/input-support.js';
+import '/core/ui/utilities/utilities-update-gate.js';
+import '/core/ui/spatial/spatial-manager.js';
+import '/core/ui/context-manager/context-manager.js';
+import '/core/ui/context-manager/display-queue-manager.js';
+import '/core/ui/dialog-box/manager-dialog-box.js';
+import '/core/ui/utilities/utilities-image.js';
+import '/core/ui/utilities/utilities-component-id.js';
+import '/core/ui/shell/mp-staging/mp-friends.js';
+import '/core/ui/shell/mp-staging/model-mp-friends.js';
+import '/core/ui/social-notifications/social-notifications-manager.js';
+import '/core/ui/utilities/utilities-layout.js';
+import '/core/ui/utilities/utilities-dom.js';
+import '/core/ui/utilities/utilities-liveops.js';
+import '/core/ui/utilities/utilities-network.js';
+import '/core/ui/shell/mp-legal/mp-legal.js';
+import '/core/ui/events/shell-events.js';
+import '/core/ui/utilities/utilities-network-constants.js';
+import '/core/ui/utilities/utilities-core-databinding.js';
+import '/core/ui/input/plot-cursor.js';
+import '/base-standard/ui/diplomacy/diplomacy-events.js';
+import '/base-standard/ui/interface-modes/support-unit-map-decoration.js';
+import '/base-standard/ui/utilities/utilities-overlay.js';
 
 const styles = "fs://game/base-standard/ui/trade-route-chooser/trade-route-chooser.css";
 
@@ -106,8 +136,12 @@ class TradeRouteChooser extends Panel {
         this.sortOrder.setAttribute("enable-shell-nav", "true");
         this.sortOrder.setAttribute("data-slot", "header");
         this.sortOrder.setAttribute("selected-item-index", "0");
-        this.sortOrder.componentCreatedEvent.on((component) => component.updateSelectorItems(sortOptions));
+        this.sortOrder.whenComponentCreated((component) => component.updateSelectorItems(sortOptions));
         this.sortOrder.setAttribute("data-audio-focus-ref", "none");
+        this.sortOrder.addEventListener("focus", () => {
+          this.selectedEl = null;
+          NavTray.removeGenericSelect();
+        });
         headerContainer.appendChild(this.sortOrder);
 
         this.setupResourceSelector(this.frame)
@@ -116,6 +150,7 @@ class TradeRouteChooser extends Panel {
         this.setupClassSelector(this.frame)
 
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
+        this.routesListEl.classList.add("mx-3");
         this.frame.appendChild(this.routesListEl);
         this.confirmButton.classList.add("mx-7", "my-5");
         this.confirmButton.setAttribute("data-slot", "footer");
@@ -136,6 +171,7 @@ class TradeRouteChooser extends Panel {
         const targetLocation = this.selectedRoute?.city.location;
         let canStartTradeRoute = false;
         if (unit && targetLocation) {
+            this.initializeNavTrayCancelAction();
             const actionParams = {X: targetLocation.x, Y: targetLocation.y};
             canStartTradeRoute = Game.UnitCommands.canStart(unit.id, UnitCommandTypes.MAKE_TRADE_ROUTE, actionParams, false).Success;
         }
@@ -169,6 +205,7 @@ class TradeRouteChooser extends Panel {
         window.addEventListener(ActiveDeviceTypeChangedEventName, this.activeDeviceTypeListener, true);
         this.checkBox.addEventListener("action-activate", this.failsAtBottomTracker);
         TradeRouteChooser._activeChooser = this;
+        window.dispatchEvent(new HideMiniMapEvent(true));
         Focus.setContextAwareFocus(this.routesListEl, this.Root);
     }
 
@@ -184,6 +221,7 @@ class TradeRouteChooser extends Panel {
         window.removeEventListener(ActiveDeviceTypeChangedEventName, this.activeDeviceTypeListener, true);
         window.removeEventListener("interface-mode-changed", this.interfaceModeListener);
         this.checkBox.removeEventListener("action-activate", this.failsAtBottomTracker);
+        window.dispatchEvent(new HideMiniMapEvent(false));
     }
 
     onUnitSelectionChanged({selected, unit}) {
@@ -617,8 +655,10 @@ class TradeRouteChooser extends Panel {
         if (this.selectedRoute) {
             TradeRoutesModel.showTradeRouteVfx(this.selectedRoute.pathPlots);
             this.tradeRouteBanner = document.createElement("trade-route-banner");
-            this.tradeRouteBanner.componentCreatedEvent.on((banner) => banner.routeInfo = this.selectedRoute);
-            CityBannerManager.instance.Root.appendChild(this.tradeRouteBanner);
+      this.tradeRouteBanner.whenComponentCreated((banner) => {
+        banner.routeInfo = this.selectedRoute;
+      });
+      UnitFlagManager.instance.Root.appendChild(this.tradeRouteBanner);
         }
     }
 

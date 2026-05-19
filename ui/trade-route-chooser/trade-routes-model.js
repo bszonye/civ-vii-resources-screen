@@ -11,10 +11,10 @@ const log_level = 'happy'
 let resourceInfoMap = new Map();
 
 // RESOURCECLASS_EMPIRE
-
 // Iterate over each game modifier
 GameInfo.GameModifiers.forEach(i => {
     // Find matching entries in ModifierArguments
+
     const matchingEntries = GameInfo.ModifierArguments.filter(e => e.ModifierId === i.ModifierId);
 
     // Check if we have all required name entries
@@ -104,8 +104,9 @@ class TradeRoutesModelImpl {
         const leaderIcon = GameInfo.Leaders.lookup(player.leaderType)?.LeaderType ?? "";
         const leaderName = player.leaderName;
         const isLandRoute = tradeRoute.domain === DomainType.DOMAIN_LAND;
-        const statusIcon = this.getTradeRouteStatusIcon(tradeRoute.status, isLandRoute);
-        const statusTexts = this.getTradeActionText(tradeRoute.status, targetCity, leaderName, isLandRoute);
+        const tradeRouteStatus = tradeRoute.status && tradeRoute.status.length > 0 ? tradeRoute.status[0] : TradeRouteStatus.INVALID;
+        const statusIcon = this.getTradeRouteStatusIcon(tradeRouteStatus, isLandRoute);
+        const statusTexts = this.getTradeActionText(tradeRouteStatus, targetCity, leaderName, isLandRoute);
         const importPayloads = [];
         const exportYieldAmounts = [];
 
