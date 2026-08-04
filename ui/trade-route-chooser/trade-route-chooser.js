@@ -47,13 +47,40 @@ GameInfo.Resources.forEach(i => {
     resourceTableMap.set(i.ResourceType, i)
 })
 
+const RELATIONSHIP_TYPE_STRINGS = {
+    [DiplomacyPlayerRelationships.PLAYER_RELATIONSHIP_HOSTILE]: "PLAYER_RELATIONSHIP_HOSTILE",
+    [DiplomacyPlayerRelationships.PLAYER_RELATIONSHIP_UNFRIENDLY]: "PLAYER_RELATIONSHIP_UNFRIENDLY",
+    [DiplomacyPlayerRelationships.PLAYER_RELATIONSHIP_NEUTRAL]: "PLAYER_RELATIONSHIP_NEUTRAL",
+    [DiplomacyPlayerRelationships.PLAYER_RELATIONSHIP_FRIENDLY]: "PLAYER_RELATIONSHIP_FRIENDLY",
+    [DiplomacyPlayerRelationships.PLAYER_RELATIONSHIP_HELPFUL]: "PLAYER_RELATIONSHIP_HELPFUL"
+};
+// Worst to best, matching the order relationship tiers actually escalate in-game.
+const RELATIONSHIP_ORDER = [
+    "PLAYER_RELATIONSHIP_AT_WAR",
+    "PLAYER_RELATIONSHIP_HOSTILE",
+    "PLAYER_RELATIONSHIP_UNFRIENDLY",
+    "PLAYER_RELATIONSHIP_NEUTRAL",
+    "PLAYER_RELATIONSHIP_FRIENDLY",
+    "PLAYER_RELATIONSHIP_HELPFUL",
+    "PLAYER_RELATIONSHIP_ALLIANCE"
+];
+
+// Icon/context pairs verified live via UI.getIconCSS against the running game.
+const SORT_MODES = [
+    {mode: "LOC_TRADE_LENS_SORT_DEFAULT", icon: "TRADE_ROUTE_LAND", context: "TRADE"},
+    {mode: "LOC_TRADE_LENS_SORT_BY_LEADER", icon: "UNKNOWN_LEADER", context: "LEADER"},
+    {mode: "LOC_TRADE_LENS_SORT_BY_RESOURCE", icon: "RADIAL_RESOURCES", context: "DEFAULT"},
+    {mode: "LOC_TRADE_LENS_SORT_BY_YIELD", icon: "CITY_YIELDS_HI", context: "DEFAULT"},
+    {mode: "LOC_TRADE_LENS_SORT_BY_DISTANCE", icon: "YIELD_TRADES", context: "YIELD"}
+];
+
 class TradeRouteChooser extends Panel {
     static _activeChooser;
+    static MINOR_CIV_LEADER = 'LEADER_MINOR_CIV_DEFAULT';
     tradeRoutes;
     isModern = Game.age == Database.makeHash("AGE_MODERN");
     isExploration = Game.age == Database.makeHash("AGE_EXPLORATION");
     frame = document.createElement("fxs-subsystem-frame");
-    sortOrder = document.createElement("fxs-selector");
     routesListEl = document.createElement("fxs-vslot");
     gamePadFooter = document.createElement("div");
     selectedUnitID = UI.Player.getHeadSelectedUnit();
@@ -79,9 +106,10 @@ class TradeRouteChooser extends Panel {
         this.resourceTracker = this.onSwitchResourceActivate.bind(this);
         this.yieldTracker = this.onSwitchYieldActivate.bind(this);
         this.classTracker = this.onSwitchClassActivate.bind(this);
+        this.leaderTracker = this.onSwitchLeaderActivate.bind(this);
+        this.sortModeTracker = this.onSwitchSortModeActivate.bind(this);
 
         this.frame = document.createElement("fxs-subsystem-frame");
-        this.sortOrder = document.createElement("fxs-selector");
         this.routesListEl = document.createElement("fxs-vslot");
         this.selectedUnitID = UI.Player.getHeadSelectedUnit();
         this.confirmButton = document.createElement("fxs-hero-button");
@@ -113,6 +141,7 @@ class TradeRouteChooser extends Panel {
         headerContainer.classList.add("header-container");
         headerContainer.style.display = "flex";
         headerContainer.style.flexDirection = "row";
+        headerContainer.style.alignItems = "center";
         headerContainer.setAttribute("data-slot", "header");
         this.frame.appendChild(headerContainer);
 
@@ -130,24 +159,14 @@ class TradeRouteChooser extends Panel {
         headerContainer.appendChild(this.checkBox);
 
 
-        const sortOptions = [{label: "LOC_TRADE_LENS_SORT_DEFAULT"}, {label: "LOC_TRADE_LENS_SORT_BY_LEADER"},
-            {label: "LOC_TRADE_LENS_SORT_BY_RESOURCE"}, {label: "LOC_TRADE_LENS_SORT_BY_YIELD"}];
-        this.sortOrder.classList.add("m-4", "font-body-lg");
-        this.sortOrder.setAttribute("enable-shell-nav", "true");
-        this.sortOrder.setAttribute("data-slot", "header");
-        this.sortOrder.setAttribute("selected-item-index", "0");
-        this.sortOrder.whenComponentCreated((component) => component.updateSelectorItems(sortOptions));
-        this.sortOrder.setAttribute("data-audio-focus-ref", "none");
-        this.sortOrder.addEventListener("focus", () => {
-          this.selectedEl = null;
-          NavTray.removeGenericSelect();
-        });
-        headerContainer.appendChild(this.sortOrder);
+        this.setupSortModeSelector(headerContainer)
 
         this.setupResourceSelector(this.frame)
-        this.setupUpdateSecondSorter()
         this.setupYieldSelector(this.frame)
         this.setupClassSelector(this.frame)
+        this.setupLeaderSelector(this.frame)
+        this.setupRelationshipSelector(this.frame)
+        this.updateSelectorVisibilityForSortMode()
 
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
         this.routesListEl.classList.add("mx-3");
@@ -321,11 +340,11 @@ class TradeRouteChooser extends Panel {
         }
         const direction = event.getDirection();
         if (direction == InputNavigationAction.SHELL_PREVIOUS) {
-            this.sortOrder.component.selectPrevious();
+            this.cycleSortMode(-1);
             Focus.setContextAwareFocus(this.routesListEl, this.Root);
             event.stopPropagation();
         } else if (direction == InputNavigationAction.SHELL_NEXT) {
-            this.sortOrder.component.selectNext();
+            this.cycleSortMode(1);
             Focus.setContextAwareFocus(this.routesListEl, this.Root);
             event.stopPropagation();
         }
@@ -356,7 +375,42 @@ class TradeRouteChooser extends Panel {
                 return statusComparison;
             }
         }
-        return b.route.leaderName.localeCompare(a.route.leaderName);
+        const aMatch = this.matchesLeaderSortBy(a.route) ? 1 : 0;
+        const bMatch = this.matchesLeaderSortBy(b.route) ? 1 : 0;
+        const leaderComparison = bMatch - aMatch;
+        if (leaderComparison !== 0) {
+            return leaderComparison;
+        }
+        // relationship mode, we also secondary sort by relationship amount. Reversed when in Hostile mode.
+        if (this.isRelationshipSortBy()) {
+            const aAmount = this.getRelationshipAmount(a.route.city.owner);
+            const bAmount = this.getRelationshipAmount(b.route.city.owner);
+            const ascending = this.leaderSortBy === 'PLAYER_RELATIONSHIP_HOSTILE';
+            const amountComparison = ascending ? (aAmount - bAmount) : (bAmount - aAmount);
+            if (amountComparison !== 0) {
+                return amountComparison;
+            }
+        }
+        return (b.route.importPayloads.length) - (a.route.importPayloads.length);
+    }
+
+    isRelationshipSortBy() {
+        return typeof this.leaderSortBy === "string" && this.leaderSortBy.startsWith("PLAYER_RELATIONSHIP_");
+    }
+
+    getRelationshipAmount(owner) {
+        const dip = Players.get(owner)?.Diplomacy;
+        return dip ? dip.getRelationshipLevel(GameContext.localPlayerID) : 0;
+    }
+
+    matchesLeaderSortBy(route) {
+        if (this.leaderSortBy === TradeRouteChooser.MINOR_CIV_LEADER) {
+            return Players.get(route.city.owner)?.isMinor === true;
+        }
+        if (typeof this.leaderSortBy === "string" && this.leaderSortBy.startsWith("PLAYER_RELATIONSHIP_")) {
+            return this.getRelationshipKey(route.city.owner) === this.leaderSortBy;
+        }
+        return route.city.owner === this.leaderSortBy;
     }
 
     resourceSort(a, b) {
@@ -444,6 +498,35 @@ class TradeRouteChooser extends Panel {
         return resourceComparison;
     }
 
+    getRelationshipKey(owner) {
+        const dip = Players.get(owner)?.Diplomacy;
+        if (!dip) {
+            return "PLAYER_RELATIONSHIP_NEUTRAL";
+        }
+        const localId = GameContext.localPlayerID;
+        if (dip.isAtWarWith(localId)) {
+            return "PLAYER_RELATIONSHIP_AT_WAR";
+        }
+        if (dip.hasAllied?.(localId)) {
+            return "PLAYER_RELATIONSHIP_ALLIANCE";
+        }
+        return RELATIONSHIP_TYPE_STRINGS[dip.getRelationshipEnum(localId)] ?? "PLAYER_RELATIONSHIP_NEUTRAL";
+    }
+
+    distanceSort(a, b) {
+        if (this.failsAtBottom) {
+            const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) -
+                Number(a.route.status == TradeRouteStatus.SUCCESS);
+            if (statusComparison !== 0) {
+                return statusComparison;
+            }
+        }
+        // -1 means the engine gave no nearestCityId to measure from, weird, but push those last.
+        const aDistance = a.route.distance < 0 ? Number.MAX_SAFE_INTEGER : a.route.distance;
+        const bDistance = b.route.distance < 0 ? Number.MAX_SAFE_INTEGER : b.route.distance;
+        return aDistance - bDistance;
+    }
+
     getClassCount(route, resourceClass) {
         if (!this.routeClassCounts) {
             this.routeClassCounts = new Map();
@@ -478,8 +561,9 @@ class TradeRouteChooser extends Panel {
             this.tradeRoutes.sort((a, b) => this.resourceSort(a, b));           // arrow notation because need this.
         } else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_YIELD") {
             this.tradeRoutes.sort((a, b) => this.yieldSort(a, b));
+        } else if (this.sortMode == "LOC_TRADE_LENS_SORT_BY_DISTANCE") {
+            this.tradeRoutes.sort((a, b) => this.distanceSort(a, b));
         }
-        this.routesListEl.innerHTML = "";
         for (const route of this.tradeRoutes) {
             if (route.element) {
                 this.routesListEl.appendChild(route.element);
@@ -518,16 +602,53 @@ class TradeRouteChooser extends Panel {
         tradeAction.innerHTML = Locale.stylize(tradeRoute.statusText);
         leftInfo.appendChild(tradeAction);
         const rightInfo = document.createElement("div");
-        rightInfo.classList.add("flex", "flex-row");
+        rightInfo.classList.add("flex", "flex-row", "items-start");
         topInfo.appendChild(rightInfo);
-        const routeIcon = document.createElement("fxs-icon");
-        routeIcon.classList.add("size-8");
-        routeIcon.setAttribute("data-icon-id", tradeRoute.statusIcon);
-        routeIcon.setAttribute("data-icon-context", "TRADE");
-        rightInfo.appendChild(routeIcon);
+        // distance circle+number stacked on top. naval routes get the waves icon as a background layer
+        const routeInfoBadge = document.createElement("div");
+        routeInfoBadge.classList.add("relative", "size-8", "mr-1");
+        if (tradeRoute.distance >= 0) {
+            const distanceLocKey = tradeRoute.distanceSource === "UNIT"
+                ? "LOC_SLTH_TRADE_DISTANCE_UNIT"
+                : "LOC_SLTH_TRADE_DISTANCE_SETTLEMENT";
+            routeInfoBadge.setAttribute("data-tooltip-content", Locale.compose(distanceLocKey, tradeRoute.distance));
+            const distanceIcon = document.createElement( "fxs-icon");
+            distanceIcon.classList.add("size-8", "absolute", "inset-0");
+            if (tradeRoute.distanceSource === "SETTLEMENT") {
+                distanceIcon.setAttribute("data-icon-id", "SLTH_HUD_DIPLO_HEX_FRAME");
+                const distanceHexShadow = document.createElement("fxs-icon");
+                distanceHexShadow.classList.add("size-8", "absolute", "inset-0");
+                distanceHexShadow.setAttribute("data-icon-id", "SLTH_HUD_DIPLO_HEX_SHADOW");
+                routeInfoBadge.appendChild(distanceHexShadow);
+            } else {
+                distanceIcon.setAttribute("data-icon-id", "SLTH_HUD_SUB_CIRCLE_BK");
+            }
+            routeInfoBadge.appendChild(distanceIcon);
+
+            const distanceText = document.createElement("fxs-header");
+            distanceText.classList.add("absolute", "inset-0", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
+            distanceText.setAttribute("title", tradeRoute.distance.toString());
+            distanceText.style.fontSize = "13px"
+            distanceText.classList.add("text-base");
+            distanceText.setAttribute("filigree-style", "none");
+            distanceIcon.appendChild(distanceText);
+        }
+        if (tradeRoute.statusIcon === 'TRADE_ROUTE_SEA') {
+            const wavesIcon = document.createElement("fxs-icon");
+            wavesIcon.classList.add("size-8", "absolute", "inset-0");
+            wavesIcon.setAttribute("data-icon-id", "SLTH_NAVAL_ROUTE_WAVES");
+            wavesIcon.setAttribute("data-icon-context", "TRADE");
+            wavesIcon.style.transform = "translateY(0.25rem)";
+            routeInfoBadge.appendChild(wavesIcon);
+        }
+        rightInfo.appendChild(routeInfoBadge);
+        // leaderColumn stacks leader badge and if a merchant is already headed there, a en-route indicator beneath
+        const leaderColumn = document.createElement("div");
+        leaderColumn.classList.add("flex", "flex-col", "items-center");
+        rightInfo.appendChild(leaderColumn);
         const leaderBg = document.createElement("div");
         leaderBg.classList.add("trade-route-chooser-leader-bg", "size-8", "relative");
-        rightInfo.appendChild(leaderBg);
+        leaderColumn.appendChild(leaderBg);
         const playerColor = UI.Color.getPlayerColors(tradeRoute.city.owner)?.primaryColor ?? {r: 0, g: 0, b: 0, a: 1};
         const playerColorCss = `rgb(${playerColor.r} ${playerColor.g} ${playerColor.b})`;
         const leaderColor = document.createElement("div");
@@ -539,6 +660,37 @@ class TradeRouteChooser extends Panel {
         leaderIcon.setAttribute("data-icon-id", tradeRoute.leaderIcon);
         leaderIcon.setAttribute("data-icon-context", "CIRCLE_MASK");
         leaderBg.appendChild(leaderIcon);
+        if (tradeRoute.merchantEnRouteUnitType) {
+            // just looks at units being sent to a location
+            const enRouteRow = document.createElement("fxs-activatable");
+            enRouteRow.classList.add("flex", "flex-row", "items-center", "mt-1");
+            enRouteRow.setAttribute("tabindex", "-1");
+            enRouteRow.setAttribute(
+                "data-tooltip-content",
+                Locale.compose("LOC_SLTH_TRADE_MERCHANT_EN_ROUTE", tradeRoute.merchantEnRouteUnitName, tradeRoute.merchantEnRouteTurns)
+            );
+            enRouteRow.addEventListener("action-activate", (event) => {
+                const enRouteUnit = Units.get(tradeRoute.merchantEnRouteUnitId);
+                if (enRouteUnit) {
+                    Camera.lookAtPlot(enRouteUnit.location, {zoom: 1});
+                }
+                event.stopPropagation();
+            });
+            leaderColumn.appendChild(enRouteRow);
+
+            const enRouteIcon = document.createElement("fxs-icon");
+            enRouteIcon.classList.add("size-5", "relative");
+            enRouteIcon.setAttribute("data-icon-id", tradeRoute.merchantEnRouteUnitType);
+            enRouteIcon.setAttribute("data-icon-context", "UNIT");
+            enRouteRow.appendChild(enRouteIcon);
+
+            const enRouteTurnsText = document.createElement("fxs-header");
+            enRouteTurnsText.classList.add("size-5", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
+            enRouteTurnsText.setAttribute("title", tradeRoute.merchantEnRouteTurns.toString());
+            enRouteTurnsText.setAttribute("filigree-style", "none");
+            enRouteTurnsText.style.fontSize = "16px"
+            enRouteRow.appendChild(enRouteTurnsText);
+        }
         const payloadInfo = document.createElement("div");
         payloadInfo.classList.add("flex", "flex-row", "mx-4", "mb-4");
         routeEle.appendChild(payloadInfo);
@@ -715,7 +867,7 @@ class TradeRouteChooser extends Panel {
             const displayText = resourceSimple.charAt(0).toUpperCase() + resourceSimple.slice(1).toLowerCase();
             return {
                 label: displayText,  // What shows in the dropdown
-                value: resource      // The actual data value used for sorting
+                value: resource      // data value used for sorting
             };
         }).sort((a, b) => a.label.localeCompare(b.label));
 
@@ -800,7 +952,7 @@ class TradeRouteChooser extends Panel {
             }
         });
 
-        // Then add remaining items that weren't in the predefined order
+        // Then add remaining items that weren't in the predefined order, in case of some crazy yield mod (its me lol)
         yieldTypes.forEach(item => {
             if (!order.includes(item)) {
                 orderedYields.push(item);
@@ -859,45 +1011,175 @@ class TradeRouteChooser extends Panel {
             const tooltipText = Locale.compose(`LOC_${classType}_NAME`)
             selectionElement.setAttribute('data-tooltip-content', tooltipText);
             this.classSelector.appendChild(selectionElement);
-            if (classType !== 'ALL') {
-                const classTypeIcon = document.createElement("fxs-icon");
-                classTypeIcon.classList.add("size-10", "relative");
-                classTypeIcon.setAttribute("data-icon-id", classType);
-                classTypeIcon.setAttribute("data-icon-context", "RESOURCECLASS");
-                selectionElement.appendChild(classTypeIcon);
-            } else {
-                const description = document.createElement("div");
-                description.classList.add("text-center", "mx-2\\.5", "font-body-sm");
-                description.setAttribute("data-slot", "header");
-                description.classList.add("text-center", "font-body-sm");
-                description.style.flexShrink = "1";
-                description.style.minWidth = "0";
-                description.innerHTML = 'All';
-                selectionElement.appendChild(description);
+            const classTypeIcon = document.createElement("fxs-icon");
+            classTypeIcon.classList.add("size-10", "relative");
+            classTypeIcon.setAttribute("data-icon-id", classType === 'ALL' ? 'RADIAL_RESOURCES' : classType);
+            classTypeIcon.setAttribute("data-icon-context", "RESOURCECLASS");
+            selectionElement.appendChild(classTypeIcon);
+        }
+    }
+
+    setupLeaderSelector(frame) {
+        // grouping city states together, had to use Players.get(owner).isMinor, because of weird city states
+        // modded that don't have a leaderType that resolves. Same with regular players as could have duplicates.
+        const leadersByKey = new Map();
+        this.tradeRoutes.forEach(item => {
+            const route = item.route;
+            const isMinorCiv = Players.get(route.city.owner)?.isMinor === true;
+            const key = isMinorCiv ? TradeRouteChooser.MINOR_CIV_LEADER : route.city.owner;
+            if (!leadersByKey.has(key)) {
+                leadersByKey.set(key, {
+                    key,
+                    isGroup: isMinorCiv,
+                    leaderIcon: isMinorCiv ? TradeRouteChooser.MINOR_CIV_LEADER : route.leaderIcon,
+                    leaderName: isMinorCiv ? "City-States" : route.leaderName
+                });
+            }
+        });
+        const leaders = Array.from(leadersByKey.values()).sort((a, b) => a.leaderName.localeCompare(b.leaderName));
+
+        this.leaderSortBy = leaders.length > 0 ? leaders[0].key : -1;
+
+        this.leaderSelector = document.createElement("div");
+        this.leaderSelector.classList.add("flex", "flex-row", "flex-wrap", "mx-4", "mb-4");
+        frame.appendChild(this.leaderSelector);
+        for (const leader of leaders) {
+            const selectionElement = document.createElement("fxs-chooser-item");
+            selectionElement.setAttribute("select-on-focus", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-icon-id", leader.key.toString());
+            selectionElement.setAttribute("select-on-activate", "true");
+            // The grouped City-States entry has no relationship because it's grouped. Also since the name of city
+            // state is the city, you should know if they are your suzerain.
+            const leaderTooltip = leader.isGroup
+                ? leader.leaderName
+                : Locale.stylize(`{1_LeaderName}[N][icon:${this.getRelationshipKey(leader.key)}] {2_RelationshipName}: {3_Amount}`,
+                    leader.leaderName,
+                    Locale.compose("LOC_" + this.getRelationshipKey(leader.key)),
+                    this.getRelationshipAmount(leader.key));
+            selectionElement.setAttribute('data-tooltip-content', leaderTooltip);
+            selectionElement.addEventListener('chooser-item-selected', this.leaderTracker);
+            this.leaderSelector.appendChild(selectionElement);
+
+            const leaderBg = document.createElement("div");
+            leaderBg.classList.add("trade-route-chooser-leader-bg", "size-10", "relative");
+            selectionElement.appendChild(leaderBg);
+
+            // The grouped city-state entry just uses neutral tint
+            const playerColor = leader.isGroup
+                ? {r: 255, g: 255, b: 255, a: 1}
+                : (UI.Color.getPlayerColors(leader.key)?.primaryColor ?? {r: 0, g: 0, b: 0, a: 1});
+            const playerColorCss = `rgb(${playerColor.r} ${playerColor.g} ${playerColor.b})`;
+            const leaderColor = document.createElement("div");
+            leaderColor.classList.add("trade-route-chooser-leader-color", "size-10");
+            leaderColor.style.filter = `fxs-color-tint(${playerColorCss})`;
+            leaderBg.appendChild(leaderColor);
+
+            const leaderIcon = document.createElement("fxs-icon");
+            leaderIcon.classList.add("size-10", "absolute", "inset-0");
+            leaderIcon.setAttribute("data-icon-id", leader.leaderIcon);
+            leaderIcon.setAttribute("data-icon-context", "CIRCLE_MASK");
+            leaderBg.appendChild(leaderIcon);
+        }
+        this.leaderSelector.classList.add("hidden");
+    }
+
+    // Combined with leader tab
+    setupRelationshipSelector(frame) {
+        const relationshipTypes = new Set();
+        this.tradeRoutes.forEach(item => {
+            relationshipTypes.add(this.getRelationshipKey(item.route.city.owner));
+        });
+
+        const orderedRelationships = RELATIONSHIP_ORDER.filter(key => relationshipTypes.has(key));
+
+        for (const relationshipType of orderedRelationships) {
+            const selectionElement = document.createElement("fxs-chooser-item");
+            selectionElement.setAttribute("select-on-focus", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-icon-id", relationshipType);
+            selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.setAttribute('data-tooltip-content', Locale.compose("LOC_" + relationshipType));
+            selectionElement.addEventListener('chooser-item-selected', this.leaderTracker);
+            this.leaderSelector.appendChild(selectionElement);
+
+            const relationshipIcon = document.createElement("fxs-icon");
+            relationshipIcon.classList.add("size-10", "relative");
+            relationshipIcon.setAttribute("data-icon-id", relationshipType);
+            relationshipIcon.setAttribute("data-icon-context", "PLAYER_RELATIONSHIP");
+            selectionElement.appendChild(relationshipIcon);
+        }
+    }
+
+    setupSortModeSelector(container) {
+        this.sortModeSelector = document.createElement("div");
+        this.sortModeSelector.classList.add("flex", "flex-row", "mx-4");
+        container.appendChild(this.sortModeSelector);
+        for (const sortModeDef of SORT_MODES) {
+            const selectionElement = document.createElement("fxs-chooser-item");
+            selectionElement.setAttribute("select-on-focus", "true");
+            selectionElement.setAttribute("show-frame-on-hover", "false");
+            selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
+            selectionElement.setAttribute("data-sort-mode", sortModeDef.mode);
+            selectionElement.setAttribute("select-on-activate", "true");
+            selectionElement.setAttribute("data-audio-focus-ref", "none");
+            selectionElement.setAttribute('data-tooltip-content', sortModeDef.mode);
+            selectionElement.addEventListener('chooser-item-selected', this.sortModeTracker);
+            selectionElement.addEventListener('focus', () => {
+                this.selectedEl = null;
+                NavTray.removeGenericSelect();
+            });
+            this.sortModeSelector.appendChild(selectionElement);
+
+            const modeIcon = document.createElement("fxs-icon");
+            modeIcon.classList.add("size-10", "relative");
+            modeIcon.setAttribute("data-icon-id", sortModeDef.icon);
+            modeIcon.setAttribute("data-icon-context", sortModeDef.context);
+            selectionElement.appendChild(modeIcon);
+        }
+    }
+
+    // Shows the icon-selector row matching the active sort mode and hides the rest.
+    updateSelectorVisibilityForSortMode() {
+        this.resourceSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_RESOURCE");
+        this.yieldSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_YIELD");
+        this.classSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_DEFAULT");
+        // Relationship icons are appended into leaderSelector so one toggle covers both.
+        this.leaderSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_LEADER");
+    }
+
+    onSwitchSortModeActivate(event) {
+        if (this.sortModeSelectionComponent != event.currentTarget) {
+            if (this.sortModeSelectionComponent) {
+                this.sortModeSelectionComponent.component.selected = false;
+            }
+            this.sortModeSelectionComponent = event.currentTarget;
+            if (event.target instanceof HTMLElement) {
+                this.sortMode = event.currentTarget.getAttribute('data-sort-mode');
+                this.updateSelectorVisibilityForSortMode();
+                this.applySort();
             }
         }
     }
 
-    setupUpdateSecondSorter() {
-        this.sortOrder.addEventListener("dropdown-selection-change", (ev) => {
-            this.sortMode = ev.detail.selectedItem?.label ?? "LOC_TRADE_LENS_SORT_DEFAULT";
-            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_RESOURCE") {
-                this.resourceSelector.classList.remove("hidden");
-            } else {
-                this.resourceSelector.classList.add("hidden");
-            }
-            if (this.sortMode === "LOC_TRADE_LENS_SORT_BY_YIELD") {
-                this.yieldSelector.classList.remove("hidden");
-            } else {
-                this.yieldSelector.classList.add("hidden");
-            }
-            if (this.sortMode === "LOC_TRADE_LENS_SORT_DEFAULT") {
-                this.classSelector.classList.remove("hidden");
-            } else {
-                this.classSelector.classList.add("hidden");
-            }
-            this.applySort();
-        });
+    // Gamepad L1/R1 (SHELL_PREVIOUS/SHELL_NEXT) cycling, replacing the old
+    // fxs-selector's built-in selectPrevious()/selectNext().
+    cycleSortMode(delta) {
+        const currentIndex = SORT_MODES.findIndex(m => m.mode === this.sortMode);
+        const nextIndex = (currentIndex + delta + SORT_MODES.length) % SORT_MODES.length;
+        const nextItem = this.sortModeSelector.children[nextIndex];
+        if (this.sortModeSelectionComponent) {
+            this.sortModeSelectionComponent.component.selected = false;
+        }
+        this.sortModeSelectionComponent = nextItem;
+        if (nextItem?.component) {
+            nextItem.component.selected = true;
+        }
+        this.sortMode = SORT_MODES[nextIndex].mode;
+        this.updateSelectorVisibilityForSortMode();
+        this.applySort();
     }
 
     onTrackFailsActivate(event) {
@@ -942,6 +1224,25 @@ class TradeRouteChooser extends Panel {
             this.classSelectionComponent = event.currentTarget;
             if (event.target instanceof HTMLElement) {
                 this.classSortBy = event.currentTarget.getAttribute('data-icon-id');
+                this.applySort();
+            }
+        }
+    }
+
+    // Handles both leader icons and relationship icons, since they share one tab
+    onSwitchLeaderActivate(event) {
+        if (this.leaderSelectionComponent != event.currentTarget) {
+            if (this.leaderSelectionComponent) {
+                this.leaderSelectionComponent.component.selected = false;
+            }
+            this.leaderSelectionComponent = event.currentTarget;
+            if (event.target instanceof HTMLElement) {
+                const rawValue = event.currentTarget.getAttribute('data-icon-id');
+                if (rawValue === TradeRouteChooser.MINOR_CIV_LEADER || rawValue.startsWith("PLAYER_RELATIONSHIP_")) {
+                    this.leaderSortBy = rawValue;
+                } else {
+                    this.leaderSortBy = Number(rawValue);
+                }
                 this.applySort();
             }
         }

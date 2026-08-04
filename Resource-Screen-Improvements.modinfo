@@ -25,10 +25,14 @@
 				<ImportFiles>
 					<Item>ui/trade-route-chooser/trade-route-chooser.js</Item>
 					<Item>ui/trade-route-chooser/trade-routes-model.js</Item>
+					<Item>icons/naval.dds</Item>
 				</ImportFiles>
 				<UpdateText>
 					<Item>text/loc.sql</Item>
 				</UpdateText>
+                <UpdateIcons>
+					<Item>icons/icons.sql</Item>
+				</UpdateIcons>
 			</Actions>
 		</ActionGroup>
 	</ActionGroups>

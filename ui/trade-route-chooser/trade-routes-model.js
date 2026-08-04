@@ -5,16 +5,13 @@
  */
 
 const log_level = 'happy'
-
  // get GameInfo on what resource does what
-// console.error('mapping modifierArgs')
 let resourceInfoMap = new Map();
 
 // RESOURCECLASS_EMPIRE
 // Iterate over each game modifier
 GameInfo.GameModifiers.forEach(i => {
     // Find matching entries in ModifierArguments
-
     const matchingEntries = GameInfo.ModifierArguments.filter(e => e.ModifierId === i.ModifierId);
 
     // Check if we have all required name entries
@@ -23,16 +20,7 @@ GameInfo.GameModifiers.forEach(i => {
     const hasPercentMultiplier = matchingEntries.some(e => e.Name === "PercentMultiplier");
     const hasAmount = matchingEntries.some(e => e.Name === "Amount");
 
-    /* matchingEntries.forEach((entry, index) => {
-        console.error(`  Entry ${index}:`);
-        for (const key in entry) {
-            console.error(`    ${key}: ${entry[key]}`);
-        }
-    });
-     */
-
     if (hasYieldType && hasResourceType && hasPercentMultiplier && hasAmount) {
-        // console.error(i.ModifierId)
         const resourceType = matchingEntries.find(e => e.Name === "ResourceType").Value;
         const yieldType = matchingEntries.find(e => e.Name === "YieldType").Value;
         const amount = matchingEntries.find(e => e.Name === "Amount").Value;
@@ -40,7 +28,6 @@ GameInfo.GameModifiers.forEach(i => {
 
         if (!resourceInfoMap.has(resourceType)) {
             resourceInfoMap.set(resourceType, new Map());
-            // console.error(`Setting resourceType ${resourceType}`)
         }
         let resourceMap = resourceInfoMap.get(resourceType);
         let propertiesMap = new Map();
@@ -48,11 +35,7 @@ GameInfo.GameModifiers.forEach(i => {
         propertiesMap.set('percentMultiplier', percentMultiplier);
 
         resourceMap.set(yieldType, propertiesMap);
-        /* console.error(`New Entry for  resourceType ${resourceType}, ${yieldType}`)
-        propertiesMap.forEach((value, key) => {
-          console.error(`property: ${key}`, value);
-        });
-         */
+
     }
     GameInfo.Resources.forEach(resource => {
         if (resourceInfoMap.has(resource.ResourceType)) {
@@ -61,13 +44,7 @@ GameInfo.GameModifiers.forEach(i => {
         }
     });
 })
-/*
-resourceInfoMap.forEach((entry, index) => {console.error(`  Entry ${index}:`);
-        for (const key in entry) {
-          console.error(`    ${key}: ${entry[key]}`);
-        }
-      });
- */
+
 class TradeRoutesModelImpl {
     constructor() {
         this.projectedTradeRoutes = [];
@@ -87,7 +64,7 @@ class TradeRoutesModelImpl {
    * @param possibleTradeRoutes The collection of trade routes
    * @returns true if successful, false on error
    */
-    calculateRoute(tradeRoute) {
+    calculateRoute(tradeRoute, selectedMerchantUnit, merchantsEnRoute) {
        const targetCity = Cities.get(tradeRoute.targetCityId);
        if (!targetCity) {
           console.error(
@@ -101,10 +78,48 @@ class TradeRoutesModelImpl {
           return false;
         }
         const cityPlotIndex = GameplayMap.getIndexFromLocation(targetCity.location);
+        let distance = -1;
+        let distanceSource = "SETTLEMENT";
+        if (selectedMerchantUnit) {
+            const turns = this.getTurnsToTargetCity(selectedMerchantUnit, targetCity);
+            if (turns >= 0) {
+                distance = turns;
+                distanceSource = "UNIT";
+            }
+        }
+        if (distanceSource === "SETTLEMENT") {
+            const nearestCity = Cities.get(tradeRoute.nearestCityId);
+            distance = nearestCity
+                ? GameplayMap.getPlotDistance(nearestCity.location.x, nearestCity.location.y, targetCity.location.x, targetCity.location.y)
+                : -1;
+        }
+        // Does any of your trade-capable units currently have a queued move order landing inside this city's purchased plots?
+        let merchantEnRouteUnitType = null;
+        let merchantEnRouteUnitName = null;
+        let merchantEnRouteTurns = -1;
+        let merchantEnRouteUnitId = null;
+        if (merchantsEnRoute && merchantsEnRoute.length > 0) {
+            const targetCityPlots = targetCity.getPurchasedPlots();
+            if (targetCityPlots && targetCityPlots.length > 0) {
+                const plotSet = new Set(targetCityPlots);
+                for (const entry of merchantsEnRoute) {
+                    const destIndex = GameplayMap.getIndexFromLocation(entry.location);
+                    if (plotSet.has(destIndex)) {
+                        merchantEnRouteUnitType = entry.unitType;
+                        merchantEnRouteUnitName = entry.unitName;
+                        merchantEnRouteTurns = entry.turns;
+                        merchantEnRouteUnitId = entry.unitId;
+                        break;
+                    }
+                }
+            }
+        }
         const leaderIcon = GameInfo.Leaders.lookup(player.leaderType)?.LeaderType ?? "";
         const leaderName = player.leaderName;
         const isLandRoute = tradeRoute.domain === DomainType.DOMAIN_LAND;
-        const tradeRouteStatus = tradeRoute.status && tradeRoute.status.length > 0 ? tradeRoute.status[0] : TradeRouteStatus.INVALID;
+        // EXTENDED_STATUS lets tradeRoute.status carry several simultaneous
+        // reason codes like [DISTANCE, NEED_MORE_FRIENDSHIP] rather than one.
+        const tradeRouteStatus = this.pickPrimaryStatus(tradeRoute.status);
         const statusIcon = this.getTradeRouteStatusIcon(tradeRouteStatus, isLandRoute);
         const statusTexts = this.getTradeActionText(tradeRouteStatus, targetCity, leaderName, isLandRoute);
         const importPayloads = [];
@@ -179,7 +194,7 @@ class TradeRoutesModelImpl {
             cityPlotIndex,
             leaderIcon,
             leaderName,
-            status: tradeRoute.status,
+            status: tradeRouteStatus,
             statusIcon,
             statusText: statusTexts.statusText,
             statusTooltip: statusTexts.statusTooltip,
@@ -189,7 +204,13 @@ class TradeRoutesModelImpl {
             exportYieldsString,
             pathPlots: tradeRoute.pathPlots,
             resourceCount: payloadMap,
-            yieldCountMap: yieldMapCount
+            yieldCountMap: yieldMapCount,
+            distance,
+            distanceSource,
+            merchantEnRouteUnitType,
+            merchantEnRouteUnitName,
+            merchantEnRouteTurns,
+            merchantEnRouteUnitId
         });
         return true;
     }
@@ -200,25 +221,138 @@ class TradeRoutesModelImpl {
           console.error("TradeRoutesModel - No local player, cannot calculate trade routes");
           return [];
         }
-        const possibleTradeRoutes = localPlayer.Trade?.projectPossibleTradeRoutes();
+        // EXTENDED_STATUS is required or the engine returns an empty importPayloads
+        // array for routes it doesn't consider immediately actionable (e.g. NEED_MORE_FRIENDSHIP),
+        // even when the target city genuinely has tradeable resources.
+        const possibleTradeRoutes = localPlayer.Trade?.projectPossibleTradeRoutes(TradeRouteSearchOptions.EXTENDED_STATUS);
         if (!possibleTradeRoutes) {
           return [];
         }
+        const selectedMerchantUnit = this.getSelectedMerchantUnit();
+        const merchantsEnRoute = this.getMerchantsEnRoute();
         this.projectedTradeRoutes = [];
-        let index = 0;
-        return new Promise((resolve) => {
-          const processNextRoute = () => {
-            if (index >= possibleTradeRoutes.length) {
-              resolve(this.projectedTradeRoutes);
-              return;
+        for (const tradeRoute of possibleTradeRoutes) {
+          this.calculateRoute(tradeRoute, selectedMerchantUnit, merchantsEnRoute);
+        }
+        return this.projectedTradeRoutes;
+    }
+    // Mirrors trade-route-chooser.js's getValidUnitSelection: only a selected unit
+    // capable of making a trade route counts, otherwise distance falls back to the
+    // nearest-settlement calculation in calculateRoute.
+    getSelectedMerchantUnit() {
+        const selectedUnitId = UI.Player.getHeadSelectedUnit();
+        if (!selectedUnitId) {
+            return null;
+        }
+        const unit = Units.get(selectedUnitId);
+        if (!unit) {
+            return null;
+        }
+        const unitDefinition = GameInfo.Units.lookup(unit.type);
+        if (!unitDefinition?.MakeTradeRoute) {
+            return null;
+        }
+        return unit;
+    }
+    // Every trade-capable unit we own, with the one plot location relevant to "is it
+    // at/heading to this city" (its queued move destination if it has one, otherwise
+    // its own current location — covers a unit already standing in a settlement with
+    // no movement order queued) and how many turns until it gets there (0 if it's
+    // already standing there). Turns are computed here, once per owned unit, rather
+    // than per candidate route. Computed once per pass and checked against each
+    // candidate route's target city purchased plots in calculateRoute.
+    getMerchantsEnRoute() {
+        const localPlayer = Players.get(GameContext.localPlayerID);
+        if (!localPlayer?.Units) {
+            return [];
+        }
+        const unitIds = localPlayer.Units.getUnitIds();
+        const enRoute = [];
+        for (const unitId of unitIds) {
+            const unit = Units.get(unitId);
+            if (!unit) {
+                continue;
             }
-            const tradeRoute = possibleTradeRoutes[index];
-            this.calculateRoute(tradeRoute);
-            index++;
-            requestAnimationFrame(processNextRoute);
-          };
-          requestAnimationFrame(processNextRoute);
-        });
+            const unitDefinition = GameInfo.Units.lookup(unit.type);
+            if (!unitDefinition?.MakeTradeRoute) {
+                continue;
+            }
+            const destination = Units.getQueuedOperationDestination(unitId);
+            let location;
+            let turns;
+            if (destination) {
+                location = destination;
+                // The queued destination is already the specific plot this unit is
+                // walking to, so this paths straight to it rather than searching
+                // purchased plots the way getTurnsToTargetCity does for a fresh send.
+                const pathTo = Units.getPathTo(unitId, destination);
+                turns = (pathTo.turns && pathTo.turns.length > 0) ? pathTo.turns[pathTo.turns.length - 1] : -1;
+            } else {
+                location = unit.location;
+                turns = 0;
+            }
+            enRoute.push({ unitType: unitDefinition.UnitType, unitName: unitDefinition.Name, location, turns, unitId });
+        }
+        return enRoute;
+    }
+    // Mirrors trade-route-chooser.js's tryIssueMoveCommand: a merchant is actually sent
+    // to one of the target city's purchased plots, not the city center, so that's what
+    // we path/turn-count against — nearest plots first, stopping at the first reachable
+    // one, same as the real send-merchant flow would try.
+    getTurnsToTargetCity(unit, targetCity) {
+        const targetCityPlots = targetCity.getPurchasedPlots();
+        if (!targetCityPlots || targetCityPlots.length === 0) {
+            return -1;
+        }
+        const distanceCache = new Map();
+        const locationCache = new Map();
+        const getLocation = (plotIndex) => {
+            let location = locationCache.get(plotIndex);
+            if (!location) {
+                location = GameplayMap.getLocationFromIndex(plotIndex);
+                locationCache.set(plotIndex, location);
+            }
+            return location;
+        };
+        const getStraightLineDistance = (plotIndex) => {
+            let dist = distanceCache.get(plotIndex);
+            if (dist === undefined) {
+                const location = getLocation(plotIndex);
+                dist = GameplayMap.getPlotDistance(unit.location.x, unit.location.y, location.x, location.y);
+                distanceCache.set(plotIndex, dist);
+            }
+            return dist;
+        };
+        const sortedPlots = [...targetCityPlots].sort((a, b) => getStraightLineDistance(a) - getStraightLineDistance(b));
+        for (const plotIndex of sortedPlots) {
+            const location = getLocation(plotIndex);
+            const pathTo = Units.getPathTo(unit.id, location);
+            if (pathTo.plots && pathTo.plots.length > 0 && pathTo.turns && pathTo.turns.length > 0) {
+                return pathTo.turns[pathTo.turns.length - 1];
+            }
+        }
+        return -1;
+    }
+    // Most decisive/reliable reason first, DISTANCE last (see calculateRoute for why).
+    STATUS_PRIORITY = [
+        TradeRouteStatus.SUCCESS,
+        TradeRouteStatus.AT_WAR,
+        TradeRouteStatus.NEED_MORE_FRIENDSHIP,
+        TradeRouteStatus.NO_URBAN_SEA_ROUTE,
+        TradeRouteStatus.NO_RESOURCES,
+        TradeRouteStatus.OVER_OCEAN,
+        TradeRouteStatus.DISTANCE
+    ];
+    pickPrimaryStatus(statusArray) {
+        if (!statusArray || statusArray.length === 0) {
+            return TradeRouteStatus.INVALID;
+        }
+        for (const candidate of this.STATUS_PRIORITY) {
+            if (statusArray.includes(candidate)) {
+                return candidate;
+            }
+        }
+        return statusArray[0];
     }
     getTradeRouteStatusIcon(status, isLandRoute) {
         switch (status) {
@@ -227,6 +361,8 @@ class TradeRoutesModelImpl {
             case TradeRouteStatus.AT_WAR:
                 return "TRADE_ROUTE_WAR";
             case TradeRouteStatus.DISTANCE:
+                return "TRADE_ROUTE_OUT_OF_RANGE";
+            case TradeRouteStatus.NO_URBAN_SEA_ROUTE:
                 return "TRADE_ROUTE_OUT_OF_RANGE";
             case TradeRouteStatus.NEED_MORE_FRIENDSHIP:
                 return "TRADE_ROUTE_ALLIANCE";
@@ -258,6 +394,10 @@ class TradeRoutesModelImpl {
                 break;
             case TradeRouteStatus.DISTANCE:
                 results.statusText = Locale.compose("LOC_TRADE_LENS_ROUTE_TYPE_OUT_OF_RANGE");
+                results.statusTooltip = results.statusText;
+                break;
+            case TradeRouteStatus.NO_URBAN_SEA_ROUTE:
+                results.statusText = Locale.compose("LOC_TRADE_LENS_ROUTE_TYPE_NO_URBAN_SEA_ROUTE");
                 results.statusTooltip = results.statusText;
                 break;
         }
