@@ -10,36 +10,8 @@ import Panel from '/core/ui/panel-support.js';
 import { HideMiniMapEvent } from '../mini-map/panel-mini-map.js';
 import {TradeRoutesModel, getResourceTypeIcon} from '/base-standard/ui/trade-route-chooser/trade-routes-model.js';
 import { UnitFlagManager } from '../unit-flags/unit-flag-manager.js';
-import WorldInput from '/base-standard/ui/world-input/world-input.js';
-import '/core/ui/framework.js';
-import '/core/ui/input/cursor.js';
-import '/core/ui-next/services/focus-manager.js';
-import '/core/ui/views/view-manager.js';
-import '/core/ui/input/input-support.js';
-import '/core/ui/utilities/utilities-update-gate.js';
-import '/core/ui/spatial/spatial-manager.js';
-import '/core/ui/context-manager/context-manager.js';
-import '/core/ui/context-manager/display-queue-manager.js';
-import '/core/ui/dialog-box/manager-dialog-box.js';
-import '/core/ui/utilities/utilities-image.js';
-import '/core/ui/utilities/utilities-component-id.js';
-import '/core/ui/shell/mp-staging/mp-friends.js';
-import '/core/ui/shell/mp-staging/model-mp-friends.js';
-import '/core/ui/social-notifications/social-notifications-manager.js';
-import '/core/ui/utilities/utilities-layout.js';
-import '/core/ui/utilities/utilities-dom.js';
-import '/core/ui/utilities/utilities-liveops.js';
-import '/core/ui/utilities/utilities-network.js';
-import '/core/ui/shell/mp-legal/mp-legal.js';
-import '/core/ui/events/shell-events.js';
-import '/core/ui/utilities/utilities-network-constants.js';
-import '/core/ui/utilities/utilities-core-databinding.js';
-import '/core/ui/input/plot-cursor.js';
-import '/base-standard/ui/diplomacy/diplomacy-events.js';
-import '/base-standard/ui/interface-modes/support-unit-map-decoration.js';
-import '/base-standard/ui/utilities/utilities-overlay.js';
-
-const styles = "fs://game/base-standard/ui/trade-route-chooser/trade-route-chooser.css";
+import WorldInput from '../world-input/world-input.js';
+import styles from './trade-route-chooser.scss.js';
 
 
 const resourceTableMap = new Map()
@@ -68,7 +40,7 @@ const RELATIONSHIP_ORDER = [
 // Icon/context pairs verified live via UI.getIconCSS against the running game.
 const SORT_MODES = [
     {mode: "LOC_TRADE_LENS_SORT_DEFAULT", icon: "TRADE_ROUTE_LAND", context: "TRADE"},
-    {mode: "LOC_TRADE_LENS_SORT_BY_LEADER", icon: "UNKNOWN_LEADER", context: "LEADER"},
+    {mode: "LOC_TRADE_LENS_SORT_BY_LEADER", icon: "LEADER_MINOR_CIV_DEFAULT", context: "LEADER"},
     {mode: "LOC_TRADE_LENS_SORT_BY_RESOURCE", icon: "RADIAL_RESOURCES", context: "DEFAULT"},
     {mode: "LOC_TRADE_LENS_SORT_BY_YIELD", icon: "CITY_YIELDS_HI", context: "DEFAULT"},
     {mode: "LOC_TRADE_LENS_SORT_BY_DISTANCE", icon: "YIELD_TRADES", context: "YIELD"}
@@ -138,28 +110,23 @@ class TradeRouteChooser extends Panel {
         titleContainer.appendChild(title)
 
         const headerContainer = document.createElement("div");
-        headerContainer.classList.add("header-container");
-        headerContainer.style.display = "flex";
-        headerContainer.style.flexDirection = "row";
-        headerContainer.style.alignItems = "center";
+        headerContainer.classList.add("header-container", "flex", "items-center", "mx-3\\.5", "mb-2");
         headerContainer.setAttribute("data-slot", "header");
         this.frame.appendChild(headerContainer);
 
         this.checkBoxText = document.createElement('p');
         this.checkBoxText.classList.add('font-title-sm', 'leading-loose', 'text-gradient-secondary');
         this.checkBoxText.classList.add("text-center", "font-body-sm");
-        this.checkBoxText.style.marginLeft = "1rem";
         this.checkBoxText.innerHTML = Locale.compose('LOC_SLTH_TRADE_TICKBOX');
-        headerContainer.appendChild(this.checkBoxText);
 
         this.checkBox = document.createElement('fxs-checkbox');
         this.checkBox.setAttribute('selected', `${this.failsAtBottom}`);
         this.checkBox.setAttribute("tabindex", "-1");
-        this.checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mr-4');
-        headerContainer.appendChild(this.checkBox);
-
+        this.checkBox.classList.add('advisor-victory_tracker', 'size-7', 'mx-1');
 
         this.setupSortModeSelector(headerContainer)
+        headerContainer.appendChild(this.checkBox);
+        headerContainer.appendChild(this.checkBoxText);
 
         this.setupResourceSelector(this.frame)
         this.setupYieldSelector(this.frame)
@@ -169,7 +136,7 @@ class TradeRouteChooser extends Panel {
         this.updateSelectorVisibilityForSortMode()
 
         this.routesListEl.setAttribute("disable-focus-allowed", "true");
-        this.routesListEl.classList.add("mx-3");
+        this.routesListEl.classList.add("ml-3");
         this.frame.appendChild(this.routesListEl);
         this.confirmButton.classList.add("mx-7", "my-5");
         this.confirmButton.setAttribute("data-slot", "footer");
@@ -183,7 +150,6 @@ class TradeRouteChooser extends Panel {
         this.updateInputDeviceType();
         this.Root.appendChild(fragment);
     }
-
     updateConfirmButton() {
         const isTradeRouteValid = this.selectedRoute?.status == TradeRouteStatus.SUCCESS;
         const unit = this.getValidUnitSelection(this.selectedUnitID);
@@ -191,8 +157,13 @@ class TradeRouteChooser extends Panel {
         let canStartTradeRoute = false;
         if (unit && targetLocation) {
             this.initializeNavTrayCancelAction();
-            const actionParams = {X: targetLocation.x, Y: targetLocation.y};
-            canStartTradeRoute = Game.UnitCommands.canStart(unit.id, UnitCommandTypes.MAKE_TRADE_ROUTE, actionParams, false).Success;
+            const actionParams = { X: targetLocation.x, Y: targetLocation.y };
+            canStartTradeRoute = Game.UnitCommands.canStart(
+                unit.id,
+                UnitCommandTypes.MAKE_TRADE_ROUTE,
+                actionParams,
+                false
+            ).Success;
         }
         // Show "Confirm" text if we are in modern age or the selected merchant is in range to begin the trade route
         const caption = this.isModern || canStartTradeRoute ? "LOC_TRADE_LENS_CONFIRM_ROUTE" : "LOC_TRADE_LENS_SEND_MERCHANT";
@@ -203,17 +174,18 @@ class TradeRouteChooser extends Panel {
             if (!this.selectedRoute) {
                 this.confirmButton.setAttribute("data-tooltip-content", "LOC_TRADE_LENS_NO_TRADE_ROUTE_SELECTED");
             } else {
-                this.confirmButton.setAttribute("data-tooltip-content", this.isModern || canStartTradeRoute ? "LOC_TRADE_LENS_CONFIRM_ROUTE_TOOLTIP" : "LOC_TRADE_LENS_SEND_MERCHANT_TOOLTIP");
+                this.confirmButton.setAttribute(
+                    "data-tooltip-content",
+                    this.isModern || canStartTradeRoute ? "LOC_TRADE_LENS_CONFIRM_ROUTE_TOOLTIP" : "LOC_TRADE_LENS_SEND_MERCHANT_TOOLTIP"
+                );
             }
         } else {
             this.confirmButton.setAttribute("data-tooltip-content", "LOC_TRADE_LENS_NO_MERCHANT_SELECTED_TOOLTIP");
         }
     }
-
     onInitialize() {
         this.applySort();
     }
-
     onAttach() {
         super.onAttach();
         engine.on("UnitSelectionChanged", this.onUnitSelectionChanged, this);
@@ -223,11 +195,10 @@ class TradeRouteChooser extends Panel {
         this.frame.addEventListener("subsystem-frame-close", this.subsystemFrameCloseListener);
         window.addEventListener(ActiveDeviceTypeChangedEventName, this.activeDeviceTypeListener, true);
         this.checkBox.addEventListener("action-activate", this.failsAtBottomTracker);
-        TradeRouteChooser._activeChooser = this;
         window.dispatchEvent(new HideMiniMapEvent(true));
+        TradeRouteChooser._activeChooser = this;
         Focus.setContextAwareFocus(this.routesListEl, this.Root);
     }
-
     onDetach() {
         super.onDetach();
         TradeRouteChooser._activeChooser = void 0;
@@ -242,11 +213,9 @@ class TradeRouteChooser extends Panel {
         this.checkBox.removeEventListener("action-activate", this.failsAtBottomTracker);
         window.dispatchEvent(new HideMiniMapEvent(false));
     }
-
-    onUnitSelectionChanged({selected, unit}) {
+    onUnitSelectionChanged({ selected, unit }) {
         this.handleUnitSelectionChanged(selected ? unit : null);
     }
-
     handleUnitSelectionChanged(unitID) {
         if (this.getValidUnitSelection(unitID)) {
             this.initializeNavTrayCancelAction();
@@ -254,7 +223,6 @@ class TradeRouteChooser extends Panel {
         }
         this.updateConfirmButton();
     }
-
     getValidUnitSelection(unitID) {
         if (!unitID) {
             return null;
@@ -269,7 +237,6 @@ class TradeRouteChooser extends Panel {
         }
         return unit;
     }
-
     initializeNavTrayCancelAction() {
         NavTray.clear();
         const selctedUnit = UI.Player.getHeadSelectedUnit();
@@ -279,7 +246,6 @@ class TradeRouteChooser extends Panel {
             NavTray.addOrUpdateGenericBack();
         }
     }
-
     onReceiveFocus() {
         super.onReceiveFocus();
         Focus.setContextAwareFocus(this.routesListEl, this.Root);
@@ -297,26 +263,22 @@ class TradeRouteChooser extends Panel {
             });
         });
     }
-
     onLoseFocus() {
         super.onLoseFocus();
         NavTray.clear();
     }
-
     close(uiViewChangeMethod) {
         super.close(uiViewChangeMethod);
         if (LensManager.getActiveLens() != "fxs-default-lens") {
             LensManager.setActiveLens("fxs-default-lens");
         }
     }
-
     // close panel if unit move action is selected
     onInterfaceModeChange(event) {
         if (event.detail.newMode === "INTERFACEMODE_MOVE_TO") {
             this.close();
         }
     }
-
     onEngineInput(inputEvent) {
         if (inputEvent.detail.status != InputActionStatuses.FINISH) {
             return;
@@ -333,7 +295,6 @@ class TradeRouteChooser extends Panel {
             this.close();
         }
     }
-
     onNavigateInput(event) {
         if (event.detail.status != InputActionStatuses.FINISH) {
             return;
@@ -342,21 +303,21 @@ class TradeRouteChooser extends Panel {
         if (direction == InputNavigationAction.SHELL_PREVIOUS) {
             this.cycleSortMode(-1);
             Focus.setContextAwareFocus(this.routesListEl, this.Root);
+            Audio.playSound("data-audio-activate", "audio-pager");
             event.stopPropagation();
         } else if (direction == InputNavigationAction.SHELL_NEXT) {
             this.cycleSortMode(1);
             Focus.setContextAwareFocus(this.routesListEl, this.Root);
+            Audio.playSound("data-audio-activate", "audio-pager");
             event.stopPropagation();
         }
     }
-
     updateInputDeviceType() {
         if (this.confirmButton) {
             this.confirmButton.classList.toggle("hidden", ActionHandler.isGamepadActive);
             this.gamePadFooter.classList.toggle("hidden", !ActionHandler.isGamepadActive);
         }
     }
-
     defaultSort(a, b) {
         if (this.failsAtBottom) {
             const statusComparison = Number(b.route.status == TradeRouteStatus.SUCCESS) - Number(a.route.status == TradeRouteStatus.SUCCESS);
@@ -570,7 +531,6 @@ class TradeRouteChooser extends Panel {
             }
         }
     }
-
     createTradeRouteChooserItem(tradeRoute) {
         const isInvalidRoute = tradeRoute.status != TradeRouteStatus.SUCCESS;
         const routeEle = document.createElement("fxs-chooser-item");
@@ -585,7 +545,7 @@ class TradeRouteChooser extends Panel {
         routeEle.setAttribute("data-trade-route-index", tradeRoute.index.toString());
         routeEle.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
         routeEle.setAttribute("disabled", isInvalidRoute.toString());
-        routeEle.classList.add("mx-3", "my-1\\.5", "flex", "flex-col", "flex-auto");
+        routeEle.classList.add("my-1\\.5", "flex", "flex-col", "flex-auto");
         const topInfo = document.createElement("div");
         topInfo.classList.add("flex", "flex-row", "mx-4", "mt-4");
         routeEle.appendChild(topInfo);
@@ -593,12 +553,12 @@ class TradeRouteChooser extends Panel {
         leftInfo.classList.add("flex", "flex-col", "flex-auto");
         topInfo.appendChild(leftInfo);
         const cityName = document.createElement("fxs-header");
-        cityName.classList.add("text-base");
+        cityName.classList.add("text-base", "self-start");
         cityName.setAttribute("title", tradeRoute.city.name);
         cityName.setAttribute("filigree-style", "none");
         leftInfo.appendChild(cityName);
         const tradeAction = document.createElement("div");
-        tradeAction.classList.add("font-body-sm", "mr-2");
+        tradeAction.classList.add("font-body-xs", "mb-1");
         tradeAction.innerHTML = Locale.stylize(tradeRoute.statusText);
         leftInfo.appendChild(tradeAction);
         const rightInfo = document.createElement("div");
@@ -628,8 +588,9 @@ class TradeRouteChooser extends Panel {
             const distanceText = document.createElement("fxs-header");
             distanceText.classList.add("absolute", "inset-0", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
             distanceText.setAttribute("title", tradeRoute.distance.toString());
-            distanceText.style.fontSize = "13px"
-            distanceText.classList.add("text-base");
+            distanceText.classList.add(
+                tradeRoute.distance < 10 ? "text-xs": "text-2xs"
+            );
             distanceText.setAttribute("filigree-style", "none");
             distanceIcon.appendChild(distanceText);
         }
@@ -656,7 +617,11 @@ class TradeRouteChooser extends Panel {
         leaderColor.style.filter = `fxs-color-tint(${playerColorCss})`;
         leaderBg.appendChild(leaderColor);
         const leaderIcon = document.createElement("fxs-icon");
-        leaderIcon.classList.add("size-8", "absolute", "inset-0");
+        if (tradeRoute.leaderIcon == TradeRouteChooser.MINOR_CIV_LEADER) {
+            leaderIcon.classList.add("size-6", "absolute", "inset-1");
+        } else {
+            leaderIcon.classList.add("size-8", "absolute", "inset-0");
+        }
         leaderIcon.setAttribute("data-icon-id", tradeRoute.leaderIcon);
         leaderIcon.setAttribute("data-icon-context", "CIRCLE_MASK");
         leaderBg.appendChild(leaderIcon);
@@ -688,11 +653,11 @@ class TradeRouteChooser extends Panel {
             enRouteTurnsText.classList.add("size-5", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
             enRouteTurnsText.setAttribute("title", tradeRoute.merchantEnRouteTurns.toString());
             enRouteTurnsText.setAttribute("filigree-style", "none");
-            enRouteTurnsText.style.fontSize = "16px"
+            enRouteTurnsText.classList.add("text-sm");
             enRouteRow.appendChild(enRouteTurnsText);
         }
         const payloadInfo = document.createElement("div");
-        payloadInfo.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        payloadInfo.classList.add("flex", "flex-row", "mx-4", "mb-2");
         routeEle.appendChild(payloadInfo);
         for (const payload of tradeRoute.importPayloads) {
             const resourceActivatable = document.createElement('fxs-activatable');
@@ -713,11 +678,7 @@ class TradeRouteChooser extends Panel {
             resourceActivatable.appendChild(payloadIcon);
             const payloadType = document.createElement("fxs-icon");
             const resourceTypeIcon = getResourceTypeIcon(payload, tradeRoute.city);
-            if (resourceTypeIcon == "RESOURCECLASS_TREASURE_FLEET") {
-                payloadType.classList.add("size-8", "absolute", "left-0", "-bottom-2");
-            } else {
-                payloadType.classList.add("size-4", "absolute", "left-0", "bottom-0");
-            }
+            payloadType.classList.add("size-4", "absolute", "left-3", "-bottom-1");
             payloadType.setAttribute("data-icon-id", resourceTypeIcon);
             payloadType.setAttribute("data-icon-context", "RESOURCECLASS");
             resourceActivatable.appendChild(payloadType);
@@ -732,7 +693,6 @@ class TradeRouteChooser extends Panel {
         });
         return routeEle;
     }
-
     handleTradeRouteSelected(routeEle, tradeRoute) {
         UI.sendAudioEvent(Audio.getSoundTag("data-audio-trade-route-activate", "audio-trade-route-chooser"));
         Camera.lookAtPlot(tradeRoute.cityPlotIndex);
@@ -753,7 +713,6 @@ class TradeRouteChooser extends Panel {
             this.showTradeRoutePathAndBanner();
         }
     }
-
     tryIssueMoveCommand(city) {
         const unit = this.getValidUnitSelection(this.selectedUnitID);
         if (!unit) {
@@ -793,14 +752,13 @@ class TradeRouteChooser extends Panel {
             if (pathTo.plots.length === 0) {
                 continue;
             }
-            const success = WorldInput.requestMoveOperation(unit.id, {X: location.x, Y: location.y});
+            const success = WorldInput.requestMoveOperation(unit.id, { X: location.x, Y: location.y });
             if (success) {
                 return true;
             }
         }
         return false;
     }
-
     showTradeRoutePathAndBanner() {
         TradeRoutesModel.clearTradeRouteVfx();
         this.tradeRouteBanner?.remove();
@@ -813,7 +771,6 @@ class TradeRouteChooser extends Panel {
       UnitFlagManager.instance.Root.appendChild(this.tradeRouteBanner);
         }
     }
-
     checkAndStartTradeRoute(checkOnly = false) {
         if (!this.selectedRoute) {
             console.log(`TradeRouteChooser: No route to create a trade with`);
@@ -825,11 +782,16 @@ class TradeRouteChooser extends Panel {
             return false;
         }
         const targetLocation = this.selectedRoute.city.location;
-        const actionParams = {X: targetLocation.x, Y: targetLocation.y};
+        const actionParams = { X: targetLocation.x, Y: targetLocation.y };
         if (checkOnly) {
             return !this.isModern || Game.UnitCommands.canStart(selectedUnitID, UnitCommandTypes.MAKE_TRADE_ROUTE, actionParams, false).Success;
         } else {
-            let commandValid = Game.UnitCommands.canStart(selectedUnitID, UnitCommandTypes.MAKE_TRADE_ROUTE, actionParams, false).Success;
+            let commandValid = Game.UnitCommands.canStart(
+                selectedUnitID,
+                UnitCommandTypes.MAKE_TRADE_ROUTE,
+                actionParams,
+                false
+            ).Success;
             if (commandValid) {
                 Game.UnitCommands.sendRequest(selectedUnitID, UnitCommandTypes.MAKE_TRADE_ROUTE, actionParams);
             } else {
@@ -842,17 +804,17 @@ class TradeRouteChooser extends Panel {
     }
 
     setupResourceSelector(frame) {
-        let resourceTypes = new Set();
-
+        const availableResourceTypes = new Set();
         this.tradeRoutes.forEach(item => {
             if (item.route.resourceCount instanceof Map) {
                 for (const key of item.route.resourceCount.keys()) {
-                    resourceTypes.add(key);
+                    availableResourceTypes.add(key);
                 }
             }
         });
-
-        resourceTypes = Array.from(resourceTypes).filter(resource => !(resource.includes("DISTANT_LANDS"))).sort((a, b) => {
+        const resourceTypes = [...availableResourceTypes]
+            .filter(resource => !(resource.includes("DISTANT_LANDS")))
+            .sort((a, b) => {
             const valueA = resourceTableMap.get(a).ResourceClassType || '';
             const valueB = resourceTableMap.get(b).ResourceClassType || '';
             const valueComparison = valueA.localeCompare(valueB)
@@ -878,18 +840,18 @@ class TradeRouteChooser extends Panel {
         }
 
         this.resourceSelector = document.createElement("div");
-        this.resourceSelector.classList.add("flex", "flex-col", "mx-4", "mb-4");
+        this.resourceSelector.classList.add("flex", "flex-col", "gap-1\\.5", "ml-3", "mt-1\\.5");
         frame.appendChild(this.resourceSelector);
-        const limiter = 8;
+        const columns = 8;
         let i = 0;
         let gridLine = document.createElement("div");
-        gridLine.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        gridLine.classList.add("flex", "flex-row", "flex-wrap", "gap-1\\.5");
         let cached_resource = resourceTableMap.get(resourceTypes[0])
         for (const resource of resourceTypes) {
-            if (i === limiter || resourceTableMap.get(resource).ResourceClassType !== cached_resource.ResourceClassType) {
+            if (resourceTableMap.get(resource).ResourceClassType !== cached_resource.ResourceClassType) {
                 this.resourceSelector.appendChild(gridLine);
                 gridLine = document.createElement("div");
-                gridLine.classList.add("flex", "flex-row", "mx-4", "mb-4");
+                gridLine.classList.add("flex", "flex-row", "flex-wrap", "gap-1\\.5");
                 i = 0;
             }
             cached_resource = resourceTableMap.get(resource)
@@ -913,9 +875,9 @@ class TradeRouteChooser extends Panel {
             resourceIcon.setAttribute("data-icon-id", resource);
             resourceIcon.setAttribute("data-icon-context", "RESOURCE");
             selectionElement.appendChild(resourceIcon);
-            if (i === 0) {
+            if (i % columns === 0) {
                 const resourceType = document.createElement("fxs-icon");
-                resourceType.classList.add("size-4", "absolute", "left-0", "bottom-0");
+                resourceType.classList.add("size-4", "absolute", "left-3", "-bottom-1");
                 resourceType.setAttribute("data-icon-id", cached_resource.ResourceClassType);
                 resourceType.setAttribute("data-icon-context", "RESOURCECLASS");
                 resourceIcon.appendChild(resourceType);
@@ -966,7 +928,7 @@ class TradeRouteChooser extends Panel {
         }
 
         this.yieldSelector = document.createElement("div");
-        this.yieldSelector.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        this.yieldSelector.classList.add("flex", "flex-row", "gap-1\\.5", "ml-3", "my-1\\.5");
         frame.appendChild(this.yieldSelector);
         for (const yieldType of orderedYields) {
             const selectionElement = document.createElement("fxs-chooser-item");
@@ -998,7 +960,7 @@ class TradeRouteChooser extends Panel {
         this.classSortBy = resourceClasses[0];
 
         this.classSelector = document.createElement("div");
-        this.classSelector.classList.add("flex", "flex-row", "mx-4", "mb-4");
+        this.classSelector.classList.add("flex", "flex-row", "gap-1\\.5", "ml-3", "my-1\\.5");
         frame.appendChild(this.classSelector);
         for (const classType of resourceClasses) {
             const selectionElement = document.createElement("fxs-chooser-item");
@@ -1041,7 +1003,7 @@ class TradeRouteChooser extends Panel {
         this.leaderSortBy = leaders.length > 0 ? leaders[0].key : -1;
 
         this.leaderSelector = document.createElement("div");
-        this.leaderSelector.classList.add("flex", "flex-row", "flex-wrap", "mx-4", "mb-4");
+        this.leaderSelector.classList.add("flex", "flex-row", "flex-wrap", "gap-1\\.5", "ml-3", "mt-1\\.5", "hidden");
         frame.appendChild(this.leaderSelector);
         for (const leader of leaders) {
             const selectionElement = document.createElement("fxs-chooser-item");
@@ -1077,12 +1039,15 @@ class TradeRouteChooser extends Panel {
             leaderBg.appendChild(leaderColor);
 
             const leaderIcon = document.createElement("fxs-icon");
-            leaderIcon.classList.add("size-10", "absolute", "inset-0");
+            if (leader.isGroup) {
+                leaderIcon.classList.add("size-8", "absolute", "inset-1");
+            } else {
+                leaderIcon.classList.add("size-10", "absolute", "inset-0");
+            }
             leaderIcon.setAttribute("data-icon-id", leader.leaderIcon);
             leaderIcon.setAttribute("data-icon-context", "CIRCLE_MASK");
             leaderBg.appendChild(leaderIcon);
         }
-        this.leaderSelector.classList.add("hidden");
     }
 
     // Combined with leader tab
@@ -1092,18 +1057,23 @@ class TradeRouteChooser extends Panel {
             relationshipTypes.add(this.getRelationshipKey(item.route.city.owner));
         });
 
-        const orderedRelationships = RELATIONSHIP_ORDER.filter(key => relationshipTypes.has(key));
-
-        for (const relationshipType of orderedRelationships) {
+        this.relationshipSelector = document.createElement("div");
+        this.relationshipSelector.classList.add("flex", "flex-row", "flex-wrap", "gap-1\\.5", "ml-3", "my-1\\.5", "hidden");
+        frame.appendChild(this.relationshipSelector);
+        for (const relationshipType of RELATIONSHIP_ORDER) {
             const selectionElement = document.createElement("fxs-chooser-item");
             selectionElement.setAttribute("select-on-focus", "true");
             selectionElement.setAttribute("show-frame-on-hover", "false");
             selectionElement.setAttribute("data-audio-group-ref", "audio-trade-route-chooser");
             selectionElement.setAttribute("data-icon-id", relationshipType);
+            selectionElement.setAttribute(
+                "disabled",
+                relationshipTypes.has(relationshipType) ? "false" : "true"
+            );
             selectionElement.setAttribute("select-on-activate", "true");
             selectionElement.setAttribute('data-tooltip-content', Locale.compose("LOC_" + relationshipType));
             selectionElement.addEventListener('chooser-item-selected', this.leaderTracker);
-            this.leaderSelector.appendChild(selectionElement);
+            this.relationshipSelector.appendChild(selectionElement);
 
             const relationshipIcon = document.createElement("fxs-icon");
             relationshipIcon.classList.add("size-10", "relative");
@@ -1115,7 +1085,7 @@ class TradeRouteChooser extends Panel {
 
     setupSortModeSelector(container) {
         this.sortModeSelector = document.createElement("div");
-        this.sortModeSelector.classList.add("flex", "flex-row", "mx-4");
+        this.sortModeSelector.classList.add("flex", "flex-row", "gap-1\\.5", "ml-3");
         container.appendChild(this.sortModeSelector);
         for (const sortModeDef of SORT_MODES) {
             const selectionElement = document.createElement("fxs-chooser-item");
@@ -1146,8 +1116,9 @@ class TradeRouteChooser extends Panel {
         this.resourceSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_RESOURCE");
         this.yieldSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_YIELD");
         this.classSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_DEFAULT");
-        // Relationship icons are appended into leaderSelector so one toggle covers both.
+        // one toggle covers leaderSelector and relationshipSelector
         this.leaderSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_LEADER");
+        this.relationshipSelector.classList.toggle("hidden", this.sortMode !== "LOC_TRADE_LENS_SORT_BY_LEADER");
     }
 
     onSwitchSortModeActivate(event) {
@@ -1247,9 +1218,7 @@ class TradeRouteChooser extends Panel {
             }
         }
     }
-
 }
-
 Controls.define("trade-route-chooser", {
     createInstance: TradeRouteChooser,
     description: "Select and get info on trade routes.",
@@ -1257,5 +1226,4 @@ Controls.define("trade-route-chooser", {
     styles: [styles],
     tabIndex: -1
 });
-
 //# sourceMappingURL=trade-route-chooser.js.map

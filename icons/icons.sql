@@ -1,7 +1,8 @@
-INSERT OR IGNORE INTO IconAliases(ID, OtherID) VALUES
-('LEADER_MINOR_CIV_DEFAULT', 'CITYSTATE');
-
 INSERT OR IGNORE INTO IconDefinitions(ID, Path, IconSize) VALUES
+('LEADER_MINOR_CIV_DEFAULT', 'blp:leader_portrait_independent', '256'),
+('LEADER_MINOR_CIV_DEFAULT', 'blp:leader_portrait_independent', '128'),
+('LEADER_MINOR_CIV_DEFAULT', 'blp:leader_portrait_independent', '64'),
+
 ('SLTH_HUD_SUB_CIRCLE_BK', 'blp:hud_sub_circle_bk', '256'),
 ('SLTH_HUD_SUB_CIRCLE_BK', 'blp:hud_sub_circle_bk', '128'),
 ('SLTH_HUD_SUB_CIRCLE_BK', 'blp:hud_sub_circle_bk', '64'),
