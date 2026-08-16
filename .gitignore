@@ -1,2 +1,4 @@
-*.dds
+.idea/*
+**.dds
+**.png
 *.DS_Store
