@@ -552,11 +552,15 @@ class TradeRouteChooser extends Panel {
         const leftInfo = document.createElement("div");
         leftInfo.classList.add("flex", "flex-col", "flex-auto");
         topInfo.appendChild(leftInfo);
+        const head = document.createElement("div");
+        head.classList.add("flex", "flex-row", "flex-wrap", "items-center");
+        head.style.columnGap = "0.6666666667rem";
         const cityName = document.createElement("fxs-header");
-        cityName.classList.add("text-base", "self-start");
+        cityName.classList.add("text-base");
         cityName.setAttribute("title", tradeRoute.city.name);
         cityName.setAttribute("filigree-style", "none");
-        leftInfo.appendChild(cityName);
+        head.appendChild(cityName);
+        leftInfo.appendChild(head);
         const tradeAction = document.createElement("div");
         tradeAction.classList.add("font-body-xs", "mb-1");
         tradeAction.innerHTML = Locale.stylize(tradeRoute.statusText);
@@ -586,7 +590,7 @@ class TradeRouteChooser extends Panel {
             routeInfoBadge.appendChild(distanceIcon);
 
             const distanceText = document.createElement("fxs-header");
-            distanceText.classList.add("absolute", "inset-0", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
+            distanceText.classList.add("absolute", "inset-0", "flex", "items-center", "justify-center", "font-title", "text-shadow-br");
             distanceText.setAttribute("title", tradeRoute.distance.toString());
             distanceText.classList.add(
                 tradeRoute.distance < 10 ? "text-xs": "text-2xs"
@@ -628,7 +632,7 @@ class TradeRouteChooser extends Panel {
         if (tradeRoute.merchantEnRouteUnitType) {
             // just looks at units being sent to a location
             const enRouteRow = document.createElement("fxs-activatable");
-            enRouteRow.classList.add("flex", "flex-row", "items-center", "mt-1");
+            enRouteRow.classList.add("flex", "flex-row", "items-center");
             enRouteRow.setAttribute("tabindex", "-1");
             enRouteRow.setAttribute(
                 "data-tooltip-content",
@@ -641,16 +645,16 @@ class TradeRouteChooser extends Panel {
                 }
                 event.stopPropagation();
             });
-            leaderColumn.appendChild(enRouteRow);
+            head.appendChild(enRouteRow);
 
             const enRouteIcon = document.createElement("fxs-icon");
-            enRouteIcon.classList.add("size-5", "relative");
+            enRouteIcon.classList.add("size-5", "relative", "-ml-1");
             enRouteIcon.setAttribute("data-icon-id", tradeRoute.merchantEnRouteUnitType);
             enRouteIcon.setAttribute("data-icon-context", "UNIT");
             enRouteRow.appendChild(enRouteIcon);
 
             const enRouteTurnsText = document.createElement("fxs-header");
-            enRouteTurnsText.classList.add("size-5", "flex", "flex-row", "items-center", "justify-center", "font-title-sm", "text-shadow-br");
+            enRouteTurnsText.classList.add("text-base");
             enRouteTurnsText.setAttribute("title", tradeRoute.merchantEnRouteTurns.toString());
             enRouteTurnsText.setAttribute("filigree-style", "none");
             enRouteTurnsText.classList.add("text-sm");
